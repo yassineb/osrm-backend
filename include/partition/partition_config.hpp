@@ -41,6 +41,7 @@ struct PartitionConfig
         partition_path = basepath + ".osrm.partition";
         mld_partition_path = basepath + ".osrm.partition";
         mld_storage_path = basepath + ".osrm.cells";
+        mld_grasp_path = basepath + ".osrm.grasp";
     }
 
     // might be changed to the node based graph at some point
@@ -51,8 +52,10 @@ struct PartitionConfig
     boost::filesystem::path partition_path;
     boost::filesystem::path mld_partition_path;
     boost::filesystem::path mld_storage_path;
+    boost::filesystem::path mld_grasp_path;
 
     unsigned requested_num_threads;
+    bool grasp;
 
     double balance;
     double boundary_factor;

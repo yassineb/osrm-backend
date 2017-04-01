@@ -33,16 +33,38 @@ class CellCustomizer
     void Customize(
         const GraphT &graph, Heap &heap, partition::CellStorage &cells, LevelID level, CellID id)
     {
+        Customize(graph, heap, cells, level, id, [](...) {});
+    }
+
+    template <typename GraphT> void Customize(const GraphT &graph, partition::CellStorage &cells)
+    {
+        Customize(
+            graph,
+            cells,
+            [this](const GraphT &graph, Heap& heap, partition::CellStorage &cells, LevelID level, CellID id) {
+                Customize(graph, heap, cells, level, id);
+            });
+    }
+
+  protected:
+    template <typename GraphT, typename RowFn>
+    void Customize(const GraphT &graph,
+                   Heap &heap,
+                   partition::CellStorage &cells,
+                   LevelID level,
+                   CellID id,
+                   RowFn process_row)
+    {
         auto cell = cells.GetCell(level, id);
         auto destinations = cell.GetDestinationNodes();
 
         // for each source do forward search
         for (auto source : cell.GetSourceNodes())
         {
-            std::unordered_set<NodeID> destinations_set(destinations.begin(), destinations.end());
             heap.Clear();
             heap.Insert(source, 0, {false});
 
+            std::unordered_set<NodeID> destinations_set(destinations.begin(), destinations.end());
             // explore search space
             while (!heap.Empty() && !destinations_set.empty())
             {
@@ -66,10 +88,13 @@ class CellCustomizer
                 weight =
                     heap.WasInserted(destination) ? heap.GetKey(destination) : INVALID_EDGE_WEIGHT;
             }
+
+            process_row(source);
         }
     }
 
-    template <typename GraphT> void Customize(const GraphT &graph, partition::CellStorage &cells)
+    template <typename GraphT, typename CellFn>
+    void Customize(const GraphT &graph, partition::CellStorage &cells, CellFn customize_cell)
     {
         Heap heap_exemplar(graph.GetNumberOfNodes());
         HeapPtr heaps(heap_exemplar);
@@ -81,13 +106,12 @@ class CellCustomizer
                                   auto &heap = heaps.local();
                                   for (auto id = range.begin(), end = range.end(); id != end; ++id)
                                   {
-                                      Customize(graph, heap, cells, level, id);
+                                      customize_cell(graph, heap, cells, level, id);
                                   }
                               });
         }
     }
 
-  private:
     template <bool first_level, typename GraphT>
     void RelaxNode(const GraphT &graph,
                    const partition::CellStorage &cells,
@@ -158,6 +182,7 @@ class CellCustomizer
         }
     }
 
+  protected:
     const partition::MultiLevelPartition &partition;
 };
 }
