@@ -45,8 +45,11 @@ template <storage::Ownership Ownership> class GRASPStorageImpl
     using GRASPData = customizer::GRASPData;
     using DownwardsGraph = util::StaticGraph<GRASPData, Ownership>;
     using DownwardEdge = typename DownwardsGraph::InputEdge;
-
+    template<typename T> using Vector = util::ViewOrVector<T, Ownership>;
   public:
+    using GRASPNodeEntry = typename DownwardsGraph::NodeArrayEntry;
+    using GRASPEdgeEntry = typename DownwardsGraph::EdgeArrayEntry;
+
     GRASPStorageImpl() = default;
 
     template <typename GraphT,
@@ -97,6 +100,11 @@ template <storage::Ownership Ownership> class GRASPStorageImpl
         auto new_end = std::unique(edges.begin(), edges.end());
         edges.resize(new_end - edges.begin());
         downwards_graph = DownwardsGraph{base_graph.GetNumberOfNodes(), edges};
+    }
+
+    GRASPStorageImpl(Vector<GRASPNodeEntry> nodes_, Vector<GRASPEdgeEntry> edges_)
+        : downwards_graph(std::move(nodes_), std::move(edges_))
+    {
     }
 
     customizer::GRASPCustomizationGraph GetCustomizationGraph() const
