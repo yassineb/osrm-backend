@@ -103,7 +103,7 @@ return_code parseArguments(int argc, char *argv[], partition::PartitionConfig &c
          "Size threshold for small components.")
         ("grasp",
          boost::program_options::value<bool>(&config.grasp)
-             ->default_value(config.grasp),
+             ->default_value(config.grasp)->implicit_value(true),
          "Process extra data structures to enable grasp")
         //
         ("max-cell-sizes",

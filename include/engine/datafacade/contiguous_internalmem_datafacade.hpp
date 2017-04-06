@@ -24,6 +24,7 @@
 
 #include "partition/cell_storage.hpp"
 #include "partition/multi_level_partition.hpp"
+#include "partition/grasp_storage.hpp"
 
 #include "storage/shared_datatype.hpp"
 #include "storage/shared_memory_ownership.hpp"
@@ -937,6 +938,7 @@ template <> class ContiguousInternalMemoryAlgorithmDataFacade<MLD> : public Algo
     // MLD data
     partition::MultiLevelPartitionView mld_partition;
     partition::CellStorageView mld_cell_storage;
+    partition::GRASPStorageView mld_grasp_storage;
     using QueryGraph = customizer::MultiLevelEdgeBasedGraphView;
     using GraphNode = QueryGraph::NodeArrayEntry;
     using GraphEdge = QueryGraph::EdgeArrayEntry;
@@ -1040,6 +1042,23 @@ template <> class ContiguousInternalMemoryAlgorithmDataFacade<MLD> : public Algo
 
         query_graph =
             QueryGraph(std::move(node_list), std::move(edge_list), std::move(node_to_offset));
+    }
+
+    void InitializeGRASPPointer(storage::DataLayout &data_layout, char *memory_block)
+    {
+        auto graph_nodes_ptr = data_layout.GetBlockPtr<partition::GRASPStorageView::GRASPNodeEntry>(
+            memory_block, storage::DataLayout::MLD_GRASP_NODE_LIST);
+
+        auto graph_edges_ptr = data_layout.GetBlockPtr<partition::GRASPStorageView::GRASPEdgeEntry>(
+            memory_block, storage::DataLayout::MLD_GRASP_EDGE_LIST);
+
+
+        util::vector_view<partition::GRASPStorageView::GRASPNodeEntry> node_list(
+            graph_nodes_ptr, data_layout.num_entries[storage::DataLayout::MLD_GRASP_NODE_LIST]);
+        util::vector_view<partition::GRASPStorageView::GRASPEdgeEntry> edge_list(
+            graph_edges_ptr, data_layout.num_entries[storage::DataLayout::MLD_GRASP_EDGE_LIST]);
+
+        mld_grasp_storage = partition::GRASPStorageView(std::move(node_list), std::move(edge_list));
     }
 
     // allocator that keeps the allocation data

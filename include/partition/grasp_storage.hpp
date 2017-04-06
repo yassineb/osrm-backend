@@ -45,7 +45,8 @@ template <storage::Ownership Ownership> class GRASPStorageImpl
     using GRASPData = customizer::GRASPData;
     using DownwardsGraph = util::StaticGraph<GRASPData, Ownership>;
     using DownwardEdge = typename DownwardsGraph::InputEdge;
-    template<typename T> using Vector = util::ViewOrVector<T, Ownership>;
+    template <typename T> using Vector = util::ViewOrVector<T, Ownership>;
+
   public:
     using GRASPNodeEntry = typename DownwardsGraph::NodeArrayEntry;
     using GRASPEdgeEntry = typename DownwardsGraph::EdgeArrayEntry;
@@ -59,37 +60,76 @@ template <storage::Ownership Ownership> class GRASPStorageImpl
                      const GraphT &base_graph,
                      const CellStorageT &cell_storage)
     {
+        // first compute the highest levlel at which a node is a border node
+        std::vector<LevelID> highest_border_level(base_graph.GetNumberOfNodes(), 0);
+        for (auto node : util::irange<NodeID>(0, base_graph.GetNumberOfNodes()))
+        {
+            for (auto edge : base_graph.GetAdjacentEdgeRange(node))
+            {
+                auto target = base_graph.GetTarget(edge);
+                auto level = partition.GetHighestDifferentLevel(node, target);
+                highest_border_level[node] = std::max(highest_border_level[node], level);
+                highest_border_level[target] = std::max(highest_border_level[target], level);
+            }
+        }
+
         std::vector<DownwardEdge> edges;
+        const auto insert_downward_edges = [&highest_border_level, &edges](
+            LevelID level, const NodeID child_node, const CellStorage::ConstCell &parent_cell) {
+            for (auto parent_node : parent_cell.GetSourceNodes())
+            {
+                BOOST_ASSERT(child_source != parent_source);
+                if (highest_border_level[parent_node] == level)
+                {
+                    edges.emplace_back(child_node, parent_node, INVALID_EDGE_WEIGHT);
+                }
+            }
+            for (auto parent_node : parent_cell.GetDestinationNodes())
+            {
+                BOOST_ASSERT(child_source != parent_source);
+                if (highest_border_level[parent_node] == level)
+                {
+                    edges.emplace_back(child_node, parent_node, INVALID_EDGE_WEIGHT);
+                }
+            }
+        };
 
         // Level 1: We need to insert an arc to all nodes in the base graph
         // TODO: This is super wasteful IMHO, the paper wants it that way
         // but we could also try to fall back to a search on the base graph
         for (auto node : util::irange<NodeID>(0, base_graph.GetNumberOfNodes()))
         {
+            if (highest_border_level[node] > 0)
+                continue;
+
             auto parent_cell = cell_storage.GetCell(1, partition.GetCell(1, node));
-            for (const auto source : parent_cell.GetSourceNodes())
-            {
-                edges.emplace_back(node, source, INVALID_EDGE_WEIGHT);
-            }
+            insert_downward_edges(1, node, parent_cell);
         }
 
         for (auto level : util::irange<LevelID>(2, partition.GetNumberOfLevels()))
         {
-            for (auto cell : util::irange<CellID>(0, partition.GetNumberOfCells(level)))
+            for (auto cell_id : util::irange<CellID>(0, partition.GetNumberOfCells(level)))
             {
-                auto parent = cell_storage.GetCell(level, cell);
+                auto parent_cell = cell_storage.GetCell(level, cell_id);
 
-                for (auto sub_cell = partition.BeginChildren(level, cell);
-                     sub_cell < partition.EndChildren(level, cell);
-                     ++sub_cell)
+                for (auto sub_cell_id = partition.BeginChildren(level, cell_id);
+                     sub_cell_id < partition.EndChildren(level, cell_id);
+                     ++sub_cell_id)
                 {
-                    auto child = cell_storage.GetCell(level - 1, sub_cell);
+                    auto child_cell = cell_storage.GetCell(level - 1, sub_cell_id);
 
-                    for (auto child_source : child.GetSourceNodes())
+                    for (auto child_node : child_cell.GetSourceNodes())
                     {
-                        for (auto parent_source : parent.GetSourceNodes())
+                        if (highest_border_level[child_node] == level - 1)
                         {
-                            edges.emplace_back(child_source, parent_source, INVALID_EDGE_WEIGHT);
+                            insert_downward_edges(level, child_node, parent_cell);
+                        }
+                    }
+                    for (auto child_node : child_cell.GetDestinationNodes())
+                    {
+                        if (highest_border_level[child_node] == level - 1)
+                        {
+                            insert_downward_edges(level, child_node, parent_cell);
                         }
                     }
                 }
@@ -141,6 +181,18 @@ template <storage::Ownership Ownership> class GRASPStorageImpl
             }
         });
     }
+
+    // Returns all incoming downward edges from higher boundary nodes
+    auto GetDownwardEdgeRange(const NodeID node) const
+    {
+        return downwards_graph.GetAdjacentEdgeRange(node);
+    }
+
+    // Return source of downward edge
+    auto GetSource(const EdgeID edge) const { return downwards_graph.GetTarget(edge); }
+
+    // Return data of downward edge
+    auto GetEdgeData(const EdgeID edge) const { return downwards_graph.GetEdgeData(edge); }
 
   private:
     friend void serialization::read<Ownership>(storage::io::FileReader &reader,
