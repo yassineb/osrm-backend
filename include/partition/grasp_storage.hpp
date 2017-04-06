@@ -166,14 +166,15 @@ template <storage::Ownership Ownership> class GRASPStorageImpl
 
     void SetDownwardEdges(const customizer::GRASPCustomizationGraph &customization_graph)
     {
-        auto node_range = tbb::blocked_range<NodeID>(0, customization_graph.GetNumberOfNodes());
-        tbb::parallel_for(node_range, [&, this](const auto &range) {
+        auto range = tbb::blocked_range<NodeID>(0, customization_graph.GetNumberOfNodes());
+        tbb::parallel_for(range, [&, this](const auto &range) {
             for (auto node = range.begin(); node < range.end(); ++node)
             {
                 for (auto edge : customization_graph.GetAdjacentEdgeRange(node))
                 {
                     const auto target = customization_graph.GetTarget(edge);
                     const auto rev_edge = downwards_graph.FindEdge(target, node);
+                    BOOST_ASSERT(rev_edge != SPECIAL_EDGEID);
                     auto &data = customization_graph.GetEdgeData(edge);
                     auto &rev_data = downwards_graph.GetEdgeData(rev_edge);
                     rev_data.weight = data.weight;

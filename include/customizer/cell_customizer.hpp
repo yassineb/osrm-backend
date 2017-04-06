@@ -38,12 +38,13 @@ class CellCustomizer
 
     template <typename GraphT> void Customize(const GraphT &graph, partition::CellStorage &cells)
     {
-        Customize(
-            graph,
-            cells,
-            [this](const GraphT &graph, Heap& heap, partition::CellStorage &cells, LevelID level, CellID id) {
-                Customize(graph, heap, cells, level, id);
-            });
+        Customize(graph,
+                  cells,
+                  [this](const GraphT &graph,
+                         Heap &heap,
+                         partition::CellStorage &cells,
+                         LevelID level,
+                         CellID id) { Customize(graph, heap, cells, level, id); });
     }
 
   protected:
@@ -58,9 +59,12 @@ class CellCustomizer
         auto cell = cells.GetCell(level, id);
         auto destinations = cell.GetDestinationNodes();
 
+        std::cout << "###" << (int)level << "/" << id << std::endl;
+
         // for each source do forward search
         for (auto source : cell.GetSourceNodes())
         {
+            std::cout << "--------" << source << "-------" << std::endl;
             heap.Clear();
             heap.Insert(source, 0, {false});
 
@@ -76,7 +80,7 @@ class CellCustomizer
                 else
                     RelaxNode<false>(graph, cells, heap, level, node, weight);
 
-                destinations_set.erase(node);
+                //destinations_set.erase(node);
             }
 
             // fill a map of destination nodes to placeholder pointers
@@ -101,14 +105,14 @@ class CellCustomizer
 
         for (std::size_t level = 1; level < partition.GetNumberOfLevels(); ++level)
         {
-            tbb::parallel_for(tbb::blocked_range<std::size_t>(0, partition.GetNumberOfCells(level)),
-                              [&](const tbb::blocked_range<std::size_t> &range) {
-                                  auto &heap = heaps.local();
-                                  for (auto id = range.begin(), end = range.end(); id != end; ++id)
-                                  {
-                                      customize_cell(graph, heap, cells, level, id);
-                                  }
-                              });
+            auto range = tbb::blocked_range<std::size_t>(0, partition.GetNumberOfCells(level));
+            //tbb::parallel_for(range, [&](const auto &range) {
+                auto &heap = heaps.local();
+                for (auto id = range.begin(), end = range.end(); id != end; ++id)
+                {
+                    customize_cell(graph, heap, cells, level, id);
+                }
+            //});
         }
     }
 
@@ -143,6 +147,7 @@ class CellCustomizer
                     {
                         const NodeID to = *subcell_destination;
                         const EdgeWeight to_weight = subcell_weight + weight;
+                        std::cout << node << "->" << to << ":" << to_weight << std::endl;
                         if (!heap.WasInserted(to))
                         {
                             heap.Insert(to, to_weight, {true});
@@ -169,6 +174,7 @@ class CellCustomizer
                  partition.GetCell(level - 1, node) != partition.GetCell(level - 1, to)))
             {
                 const EdgeWeight to_weight = data.weight + weight;
+                std::cout << node << "->" << to << ":" << to_weight << std::endl;
                 if (!heap.WasInserted(to))
                 {
                     heap.Insert(to, to_weight, {false});

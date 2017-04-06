@@ -34,8 +34,10 @@ class GRASPCellCustomizer : public CellCustomizer
                 auto &data = customization_graph.GetEdgeData(edge);
                 if (heap.WasInserted(target))
                 {
-                    data.weight = heap.GetKey(target);
+                    data.weight = std::min(data.weight, heap.GetKey(target));
                 }
+                else
+                std::cout << "not reached:" << source << "->" << target << std::endl;
             }
         });
     }
