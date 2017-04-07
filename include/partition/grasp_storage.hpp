@@ -78,7 +78,7 @@ template <storage::Ownership Ownership> class GRASPStorageImpl
             LevelID level, const NodeID child_node, const CellStorage::ConstCell &parent_cell) {
             for (auto parent_node : parent_cell.GetSourceNodes())
             {
-                BOOST_ASSERT(child_source != parent_source);
+                BOOST_ASSERT(child_node != parent_node);
                 if (highest_border_level[parent_node] == level)
                 {
                     edges.emplace_back(child_node, parent_node, INVALID_EDGE_WEIGHT);
@@ -86,7 +86,7 @@ template <storage::Ownership Ownership> class GRASPStorageImpl
             }
             for (auto parent_node : parent_cell.GetDestinationNodes())
             {
-                BOOST_ASSERT(child_source != parent_source);
+                BOOST_ASSERT(child_node != parent_node);
                 if (highest_border_level[parent_node] == level)
                 {
                     edges.emplace_back(child_node, parent_node, INVALID_EDGE_WEIGHT);
