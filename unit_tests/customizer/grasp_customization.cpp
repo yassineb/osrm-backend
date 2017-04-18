@@ -132,7 +132,7 @@ BOOST_AUTO_TEST_CASE(paper_test)
                                                   {2, 6, INVALID_EDGE_WEIGHT},
                                                   {2, 7, 1},
                                                   {3, 8, 1},
-                                                  {3, 9, INVALID_EDGE_WEIGHT},
+                                                  {3, 9, 2},
                                                   {4, 8, INVALID_EDGE_WEIGHT},
                                                   {4, 9, 1},
                                                   {5, 10, INVALID_EDGE_WEIGHT},

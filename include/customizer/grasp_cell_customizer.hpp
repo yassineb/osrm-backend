@@ -20,14 +20,14 @@ class GRASPCellCustomizer : public CellCustomizer
     }
 
     template <typename GraphT>
-    void Customize(const GraphT &graph,
+    void CustomizeCell(const GraphT &graph,
                    CellCustomizer::Heap &heap,
                    partition::CellStorage &cells,
                    GRASPCustomizationGraph &customization_graph,
                    LevelID level,
                    CellID id)
     {
-        CellCustomizer::Customize(graph, heap, cells, level, id, [&](const NodeID source) {
+        CellCustomizer::CustomizeCell(graph, heap, cells, level, id, [&](const NodeID source) {
             for (auto edge : customization_graph.GetAdjacentEdgeRange(source))
             {
                 auto target = customization_graph.GetTarget(edge);
@@ -37,7 +37,7 @@ class GRASPCellCustomizer : public CellCustomizer
                     data.weight = std::min(data.weight, heap.GetKey(target));
                 }
             }
-        });
+        }, CellCustomizer::TerminateOnExhaution {});
     }
 
     template <typename GraphT>
@@ -53,13 +53,12 @@ class GRASPCellCustomizer : public CellCustomizer
                                                                partition::CellStorage &cells,
                                                                LevelID level,
                                                                CellID id) {
-                                      Customize(graph, heap, cells, customization_graph, level, id);
+                                      CustomizeCell(graph, heap, cells, customization_graph, level, id);
                                   });
 
         grasp.SetDownwardEdges(customization_graph);
     }
 
-  private:
 };
 }
 }

@@ -16,11 +16,13 @@ namespace customizer
 
 class CellCustomizer
 {
-  private:
+  protected:
     struct HeapData
     {
         bool from_clique;
     };
+    struct TerminateEarly;
+    struct TerminateOnExhaution;
 
   public:
     using Heap =
@@ -30,10 +32,10 @@ class CellCustomizer
     CellCustomizer(const partition::MultiLevelPartition &partition) : partition(partition) {}
 
     template <typename GraphT>
-    void Customize(
+    void CustomizeCell(
         const GraphT &graph, Heap &heap, partition::CellStorage &cells, LevelID level, CellID id)
     {
-        Customize(graph, heap, cells, level, id, [](...) {});
+        CustomizeCell(graph, heap, cells, level, id, [](...) {}, TerminateEarly{});
     }
 
     template <typename GraphT> void Customize(const GraphT &graph, partition::CellStorage &cells)
@@ -44,17 +46,51 @@ class CellCustomizer
                          Heap &heap,
                          partition::CellStorage &cells,
                          LevelID level,
-                         CellID id) { Customize(graph, heap, cells, level, id); });
+                         CellID id) { CustomizeCell(graph, heap, cells, level, id); });
     }
 
   protected:
-    template <typename GraphT, typename RowFn>
-    void Customize(const GraphT &graph,
+    struct TerminateOnExhaution
+    {
+        TerminateOnExhaution() = default;
+
+        template<typename Iter>
+        TerminateOnExhaution(Iter, Iter)
+        {
+        }
+
+        bool operator()(NodeID) {
+            return false;
+        }
+
+    };
+
+    struct TerminateEarly
+    {
+        TerminateEarly() = default;
+
+        template<typename Iter>
+        TerminateEarly(Iter begin, Iter end)
+            : destinations_set(begin, end)
+        {
+        }
+
+        bool operator()(NodeID node) {
+            destinations_set.erase(node);
+            return destinations_set.empty();
+        }
+
+        std::unordered_set<NodeID> destinations_set;
+    };
+
+    template <typename GraphT, typename RowFn, typename TerminationPolicy>
+    void CustomizeCell(const GraphT &graph,
                    Heap &heap,
                    partition::CellStorage &cells,
                    LevelID level,
                    CellID id,
-                   RowFn process_row)
+                   RowFn process_row,
+                   TerminationPolicy)
     {
         auto cell = cells.GetCell(level, id);
         auto destinations = cell.GetDestinationNodes();
@@ -65,9 +101,11 @@ class CellCustomizer
             heap.Clear();
             heap.Insert(source, 0, {false});
 
-            std::unordered_set<NodeID> destinations_set(destinations.begin(), destinations.end());
+            TerminationPolicy terminate(destinations.begin(), destinations.end());
+
             // explore search space
-            while (!heap.Empty() && !destinations_set.empty())
+            bool finished = heap.Empty();
+            while (!finished)
             {
                 const NodeID node = heap.DeleteMin();
                 const EdgeWeight weight = heap.GetKey(node);
@@ -77,7 +115,7 @@ class CellCustomizer
                 else
                     RelaxNode<false>(graph, cells, heap, level, node, weight);
 
-                // destinations_set.erase(node);
+                finished = heap.Empty() || terminate(node);
             }
 
             // fill a map of destination nodes to placeholder pointers
