@@ -36,8 +36,6 @@ class GRASPCellCustomizer : public CellCustomizer
                 {
                     data.weight = std::min(data.weight, heap.GetKey(target));
                 }
-                else
-                std::cout << "not reached:" << source << "->" << target << std::endl;
             }
         });
     }
