@@ -147,4 +147,103 @@ BOOST_AUTO_TEST_CASE(paper_test)
     CHECK_EQUAL_COLLECTIONS(down_edges, down_edges_reference);
 }
 
+BOOST_AUTO_TEST_CASE(paper_test_undirected)
+{
+    /*
+        Example graph from paper:
+        Note: The paper marks 5 as border node, without having a border edge on level 1.
+              Here 5 is not a border node.
+        10
+          \
+           11---5---0---3---8---13
+           |     \ /        |
+           6------1----     |
+           |           \    |
+           7--------2---4---9---14
+                    |
+                   12
+    */
+    // node:                0  1  2  3  4  5  6  7  8  9 10 11 12 13 14
+    std::vector<CellID> l1{{0, 0, 1, 3, 2, 0, 0, 1, 3, 2, 0, 0, 1, 3, 2}};
+    std::vector<CellID> l2{{0, 0, 0, 1, 1, 0, 0, 0, 1, 1, 0, 0, 0, 1, 1}};
+    std::vector<CellID> l3{{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}};
+    MultiLevelPartition mlp{{l1, l2, l3}, {4, 2, 1}};
+
+    std::vector<MockEdge> edges = {{0, 1, 1},
+                                   {1, 0, 1},
+                                   {0, 3, 1},
+                                   {3, 0, 1},
+                                   {0, 5, 1},
+                                   {5, 0, 1},
+                                   {1, 4, 1},
+                                   {4, 1, 1},
+                                   {1, 5, 1},
+                                   {5, 1, 1},
+                                   {1, 6, 1},
+                                   {6, 1, 1},
+                                   {2, 4, 1},
+                                   {4, 2, 1},
+                                   {2, 7, 1},
+                                   {7, 2, 1},
+                                   {2, 12, 1},
+                                   {12, 2, 1},
+                                   {3, 8, 1},
+                                   {8, 3, 1},
+                                   {4, 9, 1},
+                                   {9, 4, 1},
+                                   {5, 11, 1},
+                                   {11, 5, 1},
+                                   {6, 7, 1},
+                                   {7, 6, 1},
+                                   {6, 11, 1},
+                                   {11, 6, 1},
+                                   {8, 9, 1},
+                                   {9, 8, 1},
+                                   {8, 13, 1},
+                                   {13, 8, 1},
+                                   {9, 14, 1},
+                                   {14, 9, 1},
+                                   {10, 11, 1},
+                                   {11, 10, 1}};
+    auto graph = makeGraph(mlp, edges);
+
+    CellStorage cell_storage(mlp, graph);
+    GRASPStorage grasp_storage(mlp, graph, cell_storage);
+    GRASPCellCustomizer customizer(mlp);
+
+    customizer.Customize(graph, cell_storage, grasp_storage);
+
+    std::vector<MockEdge> down_edges;
+    for (auto node : util::irange<NodeID>(0, graph.GetNumberOfNodes()))
+    {
+        for (auto edge : grasp_storage.GetDownwardEdgeRange(node))
+        {
+            auto source = grasp_storage.GetSource(edge);
+            auto weight = grasp_storage.GetEdgeData(edge).weight;
+            down_edges.push_back(MockEdge{source, node, weight});
+        }
+    }
+    std::sort(down_edges.begin(), down_edges.end());
+
+    std::vector<MockEdge> down_edges_reference = {{0, 6, 2},
+                                                  {0, 7, 3},
+                                                  {1, 6, 1},
+                                                  {1, 7, 2},
+                                                  {2, 6, 2},
+                                                  {2, 7, 1},
+                                                  {3, 8, 1},
+                                                  {3, 9, 2},
+                                                  {4, 8, 2},
+                                                  {4, 9, 1},
+                                                  {6, 5, 2},
+                                                  {6, 10, 2},
+                                                  {6, 11, 1},
+                                                  {7, 12, 2},
+                                                  {8, 13, 1},
+                                                  {9, 14, 1}};
+    std::sort(down_edges_reference.begin(), down_edges_reference.end());
+
+    CHECK_EQUAL_COLLECTIONS(down_edges, down_edges_reference);
+}
+
 BOOST_AUTO_TEST_SUITE_END()
