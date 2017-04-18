@@ -16,15 +16,13 @@ namespace engine
 namespace routing_algorithms
 {
 
-namespace ch
-{
+template <typename Algorithm>
 std::vector<EdgeWeight>
 manyToManySearch(SearchEngineData<Algorithm> &engine_working_data,
                  const datafacade::ContiguousInternalMemoryDataFacade<Algorithm> &facade,
                  const std::vector<PhantomNode> &phantom_nodes,
                  const std::vector<std::size_t> &source_indices,
                  const std::vector<std::size_t> &target_indices);
-} // namespace ch
 
 } // namespace routing_algorithms
 } // namespace engine

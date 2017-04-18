@@ -243,6 +243,144 @@ manyToManySearch(SearchEngineData<Algorithm> &engine_working_data,
 }
 
 } // namespace ch
+
+
+namespace mld
+{
+template<typename QueryHeap>
+void forwardRoutingStep(const datafacade::ContiguousInternalMemoryDataFacade<Algorithm> &facade,
+                        const unsigned row_idx,
+                        const unsigned number_of_targets,
+                        QueryHeap &query_heap,
+                        std::vector<EdgeWeight> &weights_table,
+                        std::vector<EdgeWeight> &durations_table)
+{
+    const NodeID node = query_heap.DeleteMin();
+    const EdgeWeight source_weight = query_heap.GetKey(node);
+
+    /* TODO uni-directional MLD search */
+}
+}
+
+std::vector<EdgeWeight>
+manyToManySearch(SearchEngineData<ch::Algorithm> &engine_working_data,
+                 const datafacade::ContiguousInternalMemoryDataFacade<ch::Algorithm> &facade,
+                 const std::vector<PhantomNode> &phantom_nodes,
+                 const std::vector<std::size_t> &source_indices,
+                 const std::vector<std::size_t> &target_indices)
+{
+    ch::manyToManySearch(engine_working_data, facade, phantom_nodes, source_indices, target_indices);
+}
+
+std::vector<EdgeWeight>
+manyToManySearch(SearchEngineData<mld::Algorithm> &engine_working_data,
+                 const datafacade::ContiguousInternalMemoryDataFacade<mld::Algorithm> &facade,
+                 const std::vector<PhantomNode> &phantom_nodes,
+                 const std::vector<std::size_t> &source_indices,
+                 const std::vector<std::size_t> &target_indices)
+{
+    const auto number_of_sources =
+        source_indices.empty() ? phantom_nodes.size() : source_indices.size();
+    const auto number_of_targets =
+        target_indices.empty() ? phantom_nodes.size() : target_indices.size();
+    const auto number_of_entries = number_of_sources * number_of_targets;
+
+    const auto &grasp_storage = facade.GetGraspStorage();
+
+    std::vector<EdgeWeight> weights_table(number_of_entries, INVALID_EDGE_WEIGHT);
+    std::vector<EdgeWeight> durations_table(number_of_entries, MAXIMAL_EDGE_DURATION);
+    std::vector<bool> is_target(facade.GetNumberOfNodes(), false);
+
+    engine_working_data.InitializeOrClearFirstThreadLocalStorage(facade.GetNumberOfNodes());
+
+    auto &query_heap = *(engine_working_data.forward_heap_1);
+
+    std::deque<NodeID> selection_queue;
+    const auto select_node = [&](const NodeID node) {
+        if (!is_target[node])
+        {
+            is_target[node] = true;
+            for (const auto edge : grasp_storage.GetDownwardEdgeRange(node))
+            {
+                const auto source = grasp_storage.GetSource(edge);
+                selection_queue.emplace_back(source);
+            }
+        }
+    };
+
+    const auto search_target_phantom = [&](const PhantomNode &phantom) {
+        if (phantom.forward_segment_id.enabled)
+            select_node(phantom.forward_segment_id.id);
+
+        if (phantom.reverse_segment_id.enabled)
+            select_node(phantom.reverse_segment_id.id);
+    };
+
+    // for each source do forward search
+    unsigned row_idx = 0;
+    const auto search_source_phantom = [&](const PhantomNode &phantom) {
+        // clear heap and insert source nodes
+        query_heap.Clear();
+        insertNodesInHeap<FORWARD_DIRECTION>(query_heap, phantom);
+
+        // explore search space
+        while (!query_heap.Empty())
+        {
+            mld::forwardRoutingStep(facade,
+                               row_idx,
+                               number_of_targets,
+                               query_heap,
+                               weights_table,
+                               durations_table);
+        }
+        ++row_idx;
+    };
+
+    if (target_indices.empty())
+    {
+        for (const auto &phantom : phantom_nodes)
+        {
+            search_target_phantom(phantom);
+        }
+    }
+    else
+    {
+        for (const auto index : target_indices)
+        {
+            const auto &phantom = phantom_nodes[index];
+            search_target_phantom(phantom);
+        }
+    }
+
+    // this marks all nodes that are connected by downward edges to the target nodes
+    while (!selection_queue.empty())
+    {
+        const auto node = selection_queue.front();
+        selection_queue.pop_front();
+        select_node(node);
+    }
+
+    if (source_indices.empty())
+    {
+        for (const auto &phantom : phantom_nodes)
+        {
+            search_source_phantom(phantom);
+        }
+    }
+    else
+    {
+        for (const auto index : source_indices)
+        {
+            const auto &phantom = phantom_nodes[index];
+            search_source_phantom(phantom);
+        }
+    }
+
+    return durations_table;
+}
+
+
+
 } // namespace routing_algorithms
 } // namespace engine
 } // namespace osrm

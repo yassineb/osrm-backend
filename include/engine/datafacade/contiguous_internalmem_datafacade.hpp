@@ -1077,6 +1077,11 @@ template <> class ContiguousInternalMemoryAlgorithmDataFacade<MLD> : public Algo
         return mld_partition;
     }
 
+    const partition::GRASPStorageView &GetGraspStorage() const override
+    {
+        return mld_grasp_storage;
+    }
+
     const partition::CellStorageView &GetCellStorage() const override { return mld_cell_storage; }
 
     // search graph access

@@ -157,7 +157,7 @@ RoutingAlgorithms<Algorithm>::ManyToManySearch(const std::vector<PhantomNode> &p
                                                const std::vector<std::size_t> &source_indices,
                                                const std::vector<std::size_t> &target_indices) const
 {
-    return routing_algorithms::ch::manyToManySearch(
+    return routing_algorithms::manyToManySearch(
         heaps, facade, phantom_nodes, source_indices, target_indices);
 }
 
