@@ -48,8 +48,8 @@ Feature: Bicycle - Adds penalties to unsafe roads
             | tertiary_link | lane           |               | 15 km/h    | 15 km/h    | 4.2       | 2.9        |
             | residential   | lane           |               | 15 km/h    | 15 km/h    | 4.2       | 4.2        |
             | cycleway      | lane           |               | 15 km/h    | 15 km/h    | 4.2       | 4.2        |
-            | footway       | lane           |               | 6 km/h +-1 | 6 km/h +-1 | 4.2       | 1.7        |
-            | motorway      |                | lane          | 15 km/h    |            |           | 4.2        |
+            | footway       | lane           |               | 15 km/h    | 6 km/h +-1 | 4.2       | 1.7        |
+            | motorway      |                | lane          |            | 15 km/h    |           | 4.2        |
             | primary       |                | lane          | 15 km/h    | 15 km/h    | 2.9       | 4.2        |
             | secondary     |                | lane          | 15 km/h    | 15 km/h    | 2.9       | 4.2        |
             | tertiary      |                | lane          | 15 km/h    | 15 km/h    | 2.9       | 4.2        |
@@ -58,7 +58,7 @@ Feature: Bicycle - Adds penalties to unsafe roads
             | tertiary_link |                | lane          | 15 km/h    | 15 km/h    | 2.9       | 4.2        |
             | residential   |                | lane          | 15 km/h    | 15 km/h    | 4.2       | 4.2        |
             | cycleway      |                | lane          | 15 km/h    | 15 km/h    | 4.2       | 4.2        |
-            | footway       |                | lane          | 6 km/h +-1 | 6 km/h +-1 | 1.7       | 4.2        |
+            | footway       |                | lane          | 6 km/h +-1 | 15 km/h    | 1.7       | 4.2        |
 
 
     Scenario: Bike - Don't apply penalties for all kind of cycleways

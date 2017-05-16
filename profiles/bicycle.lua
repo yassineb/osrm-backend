@@ -315,6 +315,19 @@ function way_function (way, result)
   local foot_backward = way:get_value_by_key("foot:backward")
   local bicycle = way:get_value_by_key("bicycle")
 
+  -- cycleways
+  local has_cycleway_left = false
+  local has_cycleway_right = false
+  if cycleway and profile.cycleway_tags[cycleway] then
+    has_cycleway_left = true
+    has_cycleway_right = true
+  end
+  if cycleway_left and profile.cycleway_tags[cycleway_left] then
+    has_cycleway_left = true
+  end
+  if cycleway_right and profile.cycleway_tags[cycleway_right] then
+    has_cycleway_right = true
+  end
 
   -- speed
   local bridge_speed = profile.bridge_speeds[bridge]
@@ -394,6 +407,15 @@ function way_function (way, result)
     end
   end
 
+  if has_cycleway_left then
+      result.backward_speed = profile.bicycle_speeds["cycleway"]
+      result.backward_mode = mode.cycling
+  end
+  if has_cycleway_right then
+      result.forward_speed = profile.bicycle_speeds["cycleway"]
+      result.forward_mode = mode.cycling
+  end
+
   -- direction
   local impliedOneway = false
   if junction == "roundabout" or junction == "circular" or data.highway == "motorway" then
@@ -414,18 +436,18 @@ function way_function (way, result)
       result.backward_mode = mode.cycling
       result.backward_speed = profile.bicycle_speeds["cycleway"]
     end
-  elseif cycleway_left and profile.cycleway_tags[cycleway_left] and cycleway_right and profile.cycleway_tags[cycleway_right] then
+  elseif has_cycleway_left and has_cycleway_right then
     result.forward_mode = mode.cycling
     result.backward_mode = mode.cycling
     result.forward_speed = profile.bicycle_speeds["cycleway"]
     result.backward_speed = profile.bicycle_speeds["cycleway"]
-  elseif cycleway_left and profile.cycleway_tags[cycleway_left] then
+  elseif has_cycleway_left then
     if impliedOneway then
       result.forward_mode = mode.inaccessible
       result.backward_mode = mode.cycling
       result.backward_speed = profile.bicycle_speeds["cycleway"]
     end
-  elseif cycleway_right and profile.cycleway_tags[cycleway_right] then
+  elseif has_cycleway_right then
     if impliedOneway then
       result.forward_mode = mode.cycling
       result.backward_speed = profile.bicycle_speeds["cycleway"]
@@ -450,18 +472,6 @@ function way_function (way, result)
     end
   end
 
-  -- cycleways
-  local has_cycleway_left, has_cycleway_right
-  if cycleway and profile.cycleway_tags[cycleway] then
-    has_cycleway_left = true
-    has_cycleway_right = true
-  elseif cycleway_left and profile.cycleway_tags[cycleway_left] then
-    has_cycleway_left = true
-    has_cycleway_right = false
-  elseif cycleway_right and profile.cycleway_tags[cycleway_right] then
-    has_cycleway_left = false
-    has_cycleway_right = true
-  end
   if has_cycleway_right and
      (result.forward_mode == mode.inaccessible or
       result.forward_mode == mode.cycling) then
@@ -482,16 +492,14 @@ function way_function (way, result)
     result.backward_speed = walking_speed
   end
 
-
   -- maxspeed
   limit( result, maxspeed, maxspeed_forward, maxspeed_backward )
 
   -- convert duration into cyclability
   if properties.weight_name == 'cyclability' then
-      io.write(has_cycleway_left and "true" or "fase", ',', has_cycleway_right and "true" or "fase", '\n')
       local is_unsafe = profile.safety_penalty < 1 and profile.unsafe_highway_list[data.highway]
-      local forward_is_unsafe = not has_cycleway_left and is_unsafe
-      local backward_is_unsafe = not has_cycleway_right and is_unsafe
+      local forward_is_unsafe = not has_cycleway_right and is_unsafe
+      local backward_is_unsafe = not has_cycleway_left and is_unsafe
       local is_undesireable = data.highway == "service" and profile.service_penalties[service]
       local forward_penalty = 1.0
       local backward_penalty = 1.0
