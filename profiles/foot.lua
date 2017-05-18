@@ -8,15 +8,15 @@ local Sequence = require('lib/sequence')
 local Handlers = require("lib/handlers")
 local next = next       -- bind to local for speed
 
-properties.max_speed_for_map_matching    = 40/3.6 -- kmph -> m/s
-properties.use_turn_restrictions         = false
-properties.continue_straight_at_waypoint = false
-properties.weight_name                   = 'duration'
---properties.weight_name                   = 'routability'
 
 local walking_speed = 5
 
-local profile = {
+profile = {
+  weight_name                   = 'duration',
+  max_speed_for_map_matching    = 40/3.6, -- kmph -> m/s
+  use_turn_restrictions         = false,
+  continue_straight_at_waypoint = false,
+
   default_mode            = mode.walking,
   default_speed           = walking_speed,
   oneway_handling         = 'specific',     -- respect 'oneway:foot' but not 'oneway'
@@ -250,7 +250,7 @@ function turn_function (turn)
   if turn.has_traffic_light then
      turn.duration = profile.traffic_light_penalty
   end
-  if properties.weight_name == 'routability' then
+  if profile.weight_name == 'routability' then
       -- penalize turns from non-local access only segments onto local access only tags
       if not turn.source_restricted and turn.target_restricted then
           turn.weight = turn.weight + 3000

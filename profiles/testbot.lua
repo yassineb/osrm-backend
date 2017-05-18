@@ -7,23 +7,26 @@ api_version = 1
 -- Secondary road:  18km/h = 18000m/3600s = 100m/20s
 -- Tertiary road:  12km/h = 12000m/3600s = 100m/30s
 
-speed_profile = {
-  ["primary"] = 36,
-  ["secondary"] = 18,
-  ["tertiary"] = 12,
-  ["steps"] = 6,
-  ["default"] = 24
+profile = {
+  -- these settings are read externally
+  continue_straight_at_waypoint = true,
+  use_turn_restrictions         = true,
+  max_speed_for_map_matching    = 30/3.6, --km -> m/s
+  weight_name                   = 'duration',
+
+  -- used internally
+  uturn_penalty                 = 20,
+  traffic_light_penalty         = 7,     -- seconds
+
+  default_speed  = 24,
+  speeds = {
+    primary = 36,
+    secondary = 18,
+    tertiary = 12,
+    steps = 6,
+  }
 }
 
--- these settings are read directly by osrm
-
-properties.continue_straight_at_waypoint = true
-properties.use_turn_restrictions         = true
-properties.max_speed_for_map_matching    = 30/3.6 --km -> m/s
-properties.weight_name                   = 'duration'
-
-local uturn_penalty                      = 20
-local traffic_light_penalty              = 7     -- seconds
 
 function limit_speed(speed, limits)
   -- don't use ipairs(), since it stops at the first nil value
@@ -70,7 +73,7 @@ function way_function (way, result)
     result.forward_mode = mode.route
     result.backward_mode = mode.route
   else
-    local speed_forw = speed_profile[highway] or speed_profile['default']
+    local speed_forw = profile.speeds[highway] or profile.default_speed
     local speed_back = speed_forw
 
     if highway == "river" then
@@ -119,10 +122,10 @@ end
 
 function turn_function (turn)
   if turn.direction_modifier == direction_modifier.uturn then
-    turn.duration = uturn_penalty
-    turn.weight = uturn_penalty
+    turn.duration = profile.uturn_penalty
+    turn.weight = profile.uturn_penalty
   end
   if turn.has_traffic_light then
-     turn.duration = turn.duration + traffic_light_penalty
+     turn.duration = turn.duration + profile.traffic_light_penalty
   end
 end

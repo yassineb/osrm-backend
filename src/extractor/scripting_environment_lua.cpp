@@ -226,31 +226,6 @@ void Sol2ScriptingEnvironment::InitContext(LuaScriptingContext &context)
 
     context.state.new_enum("constants", "precision", COORDINATE_PRECISION);
 
-    context.state.new_usertype<ProfileProperties>(
-        "ProfileProperties",
-        "traffic_signal_penalty",
-        sol::property(&ProfileProperties::GetTrafficSignalPenalty,
-                      &ProfileProperties::SetTrafficSignalPenalty),
-        "u_turn_penalty",
-        sol::property(&ProfileProperties::GetUturnPenalty, &ProfileProperties::SetUturnPenalty),
-        "max_speed_for_map_matching",
-        sol::property(&ProfileProperties::GetMaxSpeedForMapMatching,
-                      &ProfileProperties::SetMaxSpeedForMapMatching),
-        "continue_straight_at_waypoint",
-        &ProfileProperties::continue_straight_at_waypoint,
-        "use_turn_restrictions",
-        &ProfileProperties::use_turn_restrictions,
-        "left_hand_driving",
-        &ProfileProperties::left_hand_driving,
-        "weight_precision",
-        &ProfileProperties::weight_precision,
-        "weight_name",
-        sol::property(&ProfileProperties::SetWeightName, &ProfileProperties::GetWeightName),
-        "max_turn_weight",
-        sol::property(&ProfileProperties::GetMaxTurnWeight),
-        "force_split_edges",
-        &ProfileProperties::force_split_edges);
-
     context.state.new_usertype<std::vector<std::string>>(
         "vector",
         "Add",
@@ -416,7 +391,6 @@ void Sol2ScriptingEnvironment::InitContext(LuaScriptingContext &context)
     context.state.new_usertype<RasterDatum>(
         "RasterDatum", "datum", &RasterDatum::datum, "invalid_data", &RasterDatum::get_invalid);
 
-    context.state["properties"] = &context.properties;
     context.state["sources"] = &context.sources;
 
     //
@@ -426,6 +400,49 @@ void Sol2ScriptingEnvironment::InitContext(LuaScriptingContext &context)
     util::luaAddScriptFolderToLoadPath(context.state.lua_state(), file_name.c_str());
 
     context.state.script_file(file_name);
+
+
+    // set constants in 'constants' table
+    context.state["constants"] = context.state.create_table_with(
+        "max_turn_weight", Sol2ScriptingEnvironment::MAX_TURN_WEIGHT
+    );
+
+    // read properties from 'profile' table
+    sol::optional<std::string> weight_name = context.state["profile"]["weight_name"];
+    if( weight_name != sol::nullopt)
+      context.properties.SetWeightName( weight_name.value() );
+
+    sol::optional<std::int32_t> traffic_signal_penalty = context.state["profile"]["traffic_signal_penalty"];
+    if( traffic_signal_penalty != sol::nullopt)
+      context.properties.SetTrafficSignalPenalty( traffic_signal_penalty.value() );
+
+    sol::optional<std::int32_t> u_turn_penalty = context.state["profile"]["u_turn_penalty"];
+    if( u_turn_penalty != sol::nullopt)
+      context.properties.SetUturnPenalty( u_turn_penalty.value() );
+
+    sol::optional<double> max_speed_for_map_matching = context.state["profile"]["max_speed_for_map_matching"];
+    if( max_speed_for_map_matching != sol::nullopt)
+      context.properties.SetMaxSpeedForMapMatching( max_speed_for_map_matching.value() );
+
+    sol::optional<bool> continue_straight_at_waypoint = context.state["profile"]["continue_straight_at_waypoint"];
+    if( continue_straight_at_waypoint != sol::nullopt)
+      context.properties.continue_straight_at_waypoint = continue_straight_at_waypoint.value();
+
+    sol::optional<bool> use_turn_restrictions = context.state["profile"]["use_turn_restrictions"];
+    if( use_turn_restrictions != sol::nullopt)
+      context.properties.use_turn_restrictions = use_turn_restrictions.value();
+
+    sol::optional<bool> left_hand_driving = context.state["profile"]["left_hand_driving"];
+    if( left_hand_driving != sol::nullopt)
+      context.properties.left_hand_driving = left_hand_driving.value();
+
+    sol::optional<unsigned> weight_precision = context.state["profile"]["weight_precision"];
+    if( weight_precision != sol::nullopt)
+      context.properties.weight_precision = weight_precision.value();
+
+    sol::optional<bool> force_split_edges = context.state["profile"]["force_split_edges"];
+    if( force_split_edges != sol::nullopt)
+      context.properties.force_split_edges = force_split_edges.value();
 
     sol::function turn_function = context.state["turn_function"];
     sol::function node_function = context.state["node_function"];
@@ -597,6 +614,9 @@ void Sol2ScriptingEnvironment::ProcessTurn(ExtractionTurn &turn)
         if (context.has_turn_penalty_function)
         {
             turn_function(turn);
+
+            if( turn.weight == MAX_TURN_WEIGHT )
+              turn.weight = context.properties.GetMaxTurnWeight();
 
             // Turn weight falls back to the duration value in deciseconds
             // or uses the extracted unit-less weight value

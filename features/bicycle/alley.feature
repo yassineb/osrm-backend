@@ -5,7 +5,7 @@ Feature: Bicycle - Route around alleys
         Given the profile file
         """
         require 'bicycle'
-        properties.weight_name = 'cyclability'
+        profile.weight_name = 'cyclability'
         """
 
     Scenario: Bicycle - Avoid taking alleys

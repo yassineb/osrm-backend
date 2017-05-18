@@ -66,7 +66,7 @@ Feature: Car - weights
         Given the profile file "car" extended with
         """
         api_version = 1
-        properties.weight_name = 'distance'
+        profile.weight_name = 'distance'
         """
 
         Given the node map

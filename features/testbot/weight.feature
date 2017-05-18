@@ -63,9 +63,9 @@ Feature: Weight tests
         Given the profile file "testbot" extended with
         """
         api_version = 1
-        properties.traffic_signal_penalty = 0
-        properties.u_turn_penalty = 0
-        properties.weight_name = 'steps'
+        profile.traffic_signal_penalty = 0
+        profile.u_turn_penalty = 0
+        profile.weight_name = 'steps'
         function way_function(way, result)
           result.forward_mode = mode.driving
           result.backward_mode = mode.driving
@@ -90,9 +90,9 @@ Feature: Weight tests
         Given the profile file "testbot" extended with
         """
         api_version = 1
-        properties.traffic_signal_penalty = 0
-        properties.u_turn_penalty = 0
-        properties.weight_name = 'steps'
+        profile.traffic_signal_penalty = 0
+        profile.u_turn_penalty = 0
+        profile.weight_name = 'steps'
         function way_function(way, result)
           result.forward_mode = mode.driving
           result.backward_mode = mode.driving
@@ -122,9 +122,9 @@ Feature: Weight tests
         Given the profile file "testbot" extended with
         """
         api_version = 1
-        properties.traffic_signal_penalty = 0
-        properties.u_turn_penalty = 0
-        properties.weight_name = 'steps'
+        profile.traffic_signal_penalty = 0
+        profile.u_turn_penalty = 0
+        profile.weight_name = 'steps'
         function way_function(way, result)
           result.forward_mode = mode.driving
           result.backward_mode = mode.driving
@@ -158,9 +158,9 @@ Feature: Weight tests
         Given the profile file "testbot" extended with
         """
         api_version = 1
-        properties.traffic_signal_penalty = 0
-        properties.u_turn_penalty = 0
-        properties.weight_name = 'steps'
+        profile.traffic_signal_penalty = 0
+        profile.u_turn_penalty = 0
+        profile.weight_name = 'steps'
         function way_function(way, result)
           result.forward_mode = mode.driving
           result.backward_mode = mode.driving
@@ -198,10 +198,10 @@ Feature: Weight tests
         Given the profile file "testbot" extended with
         """
         api_version = 1
-        properties.traffic_signal_penalty = 0
-        properties.u_turn_penalty = 0
-        properties.weight_name = 'steps'
-        properties.weight_precision = 3
+        profile.traffic_signal_penalty = 0
+        profile.u_turn_penalty = 0
+        profile.weight_name = 'steps'
+        profile.weight_precision = 3
         function way_function(way, result)
           result.forward_mode = mode.driving
           result.backward_mode = mode.driving
@@ -244,9 +244,9 @@ Feature: Weight tests
         Given the profile file "testbot" extended with
         """
         api_version = 1
-        properties.traffic_signal_penalty = 0
-        properties.u_turn_penalty = 0
-        properties.weight_name = 'steps'
+        profile.traffic_signal_penalty = 0
+        profile.u_turn_penalty = 0
+        profile.weight_name = 'steps'
         function way_function(way, result)
           result.forward_mode = mode.driving
           result.backward_mode = mode.driving
@@ -292,7 +292,7 @@ Feature: Weight tests
         Given the profile file "testbot" extended with
         """
         api_version = 1
-        properties.weight_precision = 3
+        profile.weight_precision = 3
         """
 
         And the node map

@@ -8,19 +8,21 @@ local Sequence = require('lib/sequence')
 local Handlers = require("lib/handlers")
 local next = next       -- bind to local for speed
 
--- set profile properties
-properties.max_speed_for_map_matching      = 180/3.6 -- 180kmph -> m/s
-properties.use_turn_restrictions           = true
-properties.continue_straight_at_waypoint   = true
-properties.left_hand_driving               = false
--- For routing based on duration, but weighted for preferring certain roads
-properties.weight_name                     = 'routability'
--- For shortest duration without penalties for accessibility
---properties.weight_name                     = 'duration'
--- For shortest distance without penalties for accessibility
---properties.weight_name                     = 'distance'
+local use_left_hand_driving = false
 
-local profile = {
+profile = {
+  max_speed_for_map_matching      = 180/3.6, -- 180kmph -> m/s
+  use_turn_restrictions           = true,
+  continue_straight_at_waypoint   = true,
+  left_hand_driving               = use_left_hand_driving,
+
+  -- For routing based on duration, but weighted for preferring certain roads
+  weight_name                     = 'routability',
+  -- For shortest duration without penalties for accessibility
+  -- weight_name                     = 'duration',
+  -- For shortest distance without penalties for accessibility
+  -- weight_name                     = 'distance',
+
   default_mode      = mode.driving,
   default_speed     = 10,
   oneway_handling   = true,
@@ -33,7 +35,7 @@ local profile = {
 
   -- Note: this biases right-side driving.
   -- Should be inverted for left-driving countries.
-  turn_bias   = properties.left_hand_driving and 1/1.075 or 1.075,
+  turn_bias   = use_left_hand_driving and 1/1.075 or 1.075,
 
   -- a list of suffixes to suppress in name change instructions
   suffix_list = {
@@ -401,16 +403,16 @@ function turn_function (turn)
     end
 
     -- for distance based routing we don't want to have penalties based on turn angle
-    if properties.weight_name == 'distance' then
+    if profile.weight_name == 'distance' then
        turn.weight = 0
     else
        turn.weight = turn.duration
     end
   end
-  if properties.weight_name == 'routability' then
+  if profile.weight_name == 'routability' then
       -- penalize turns from non-local access only segments onto local access only tags
       if not turn.source_restricted and turn.target_restricted then
-          turn.weight = properties.max_turn_weight;
+          turn.weight = constants.max_turn_weight
       end
   end
 end

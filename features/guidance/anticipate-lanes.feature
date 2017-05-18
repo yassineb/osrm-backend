@@ -584,7 +584,7 @@ Feature: Turn Lane Guidance
     Scenario: No Lanes for Roundabouts, see #2626
         Given the profile file "car" extended with
         """
-        properties.left_hand_driving = true
+        profile.left_hand_driving = true
         """
         And the node map
             """

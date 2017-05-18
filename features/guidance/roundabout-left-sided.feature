@@ -6,7 +6,7 @@ Feature: Basic Roundabout
         Given the profile file
            """
            require 'car'
-            properties.left_hand_driving = true
+            profile.left_hand_driving = true
            """
 
     Scenario: Roundabout exit counting for left sided driving

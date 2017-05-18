@@ -8,18 +8,17 @@ local Handlers = require("lib/handlers")
 local next = next       -- bind to local for speed
 local limit = require("lib/maxspeed").limit
 
--- these need to be global because they are accesed externaly
-properties.max_speed_for_map_matching    = 110/3.6 -- kmph -> m/s
-properties.use_turn_restrictions         = false
-properties.continue_straight_at_waypoint = false
-properties.weight_name                   = 'duration'
---properties.weight_name                   = 'cyclability'
-
-
 local default_speed = 15
 local walking_speed = 6
 
-local profile = {
+-- must be global because it's accesed externally
+profile = {
+  max_speed_for_map_matching    = 110/3.6, -- kmph -> m/s
+  use_turn_restrictions         = false,
+  continue_straight_at_waypoint = false,
+--weight_name                   = 'cyclability',
+  weight_name                   = 'duration',
+
   default_mode              = mode.cycling,
   default_speed             = 15,
   oneway_handling           = true,
@@ -484,7 +483,7 @@ function way_function (way, result)
   limit( result, maxspeed, maxspeed_forward, maxspeed_backward )
 
   -- convert duration into cyclability
-  if properties.weight_name == 'cyclability' then
+  if profile.weight_name == 'cyclability' then
       local is_unsafe = profile.safety_penalty < 1 and profile.unsafe_highway_list[data.highway]
       local is_undesireable = data.highway == "service" and profile.service_penalties[service]
       local penalty = 1.0
@@ -543,11 +542,7 @@ function turn_function(turn)
   if turn.has_traffic_light then
      turn.duration = turn.duration + profile.traffic_light_penalty
   end
-  if properties.weight_name == 'cyclability' then
-      turn.weight = turn.duration
-      -- penalize turns from non-local access only segments onto local access only tags
-      if not turn.source_restricted and turn.target_restricted then
-          turn.weight = turn.weight + 3000
-      end
+  if profile.weight_name == 'cyclability' then
+    turn.weight = turn.duration
   end
 end

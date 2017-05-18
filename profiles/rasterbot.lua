@@ -1,7 +1,9 @@
 api_version = 1
 -- Rasterbot profile
 
-properties.force_split_edges = true
+profile = {
+  force_split_edges = true
+}
 
 -- Minimalist node_ and way_functions in order to test source_ and segment_functions
 
