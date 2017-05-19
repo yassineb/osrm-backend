@@ -121,7 +121,7 @@ alternativePathSearch(SearchEngineData<Algorithm> &search_engine_data,
             if (!forward_heap.Empty())
                 forward_heap_min = forward_heap.MinKey();
 
-            if (overlap_via != SPECIAL_NODEID)
+            if (overlap_weight != INVALID_EDGE_WEIGHT)
             {
                 if (shortest_path_via != SPECIAL_NODEID)
                 {
@@ -153,7 +153,7 @@ alternativePathSearch(SearchEngineData<Algorithm> &search_engine_data,
             if (!reverse_heap.Empty())
                 reverse_heap_min = reverse_heap.MinKey();
 
-            if (overlap_via != SPECIAL_NODEID)
+            if (overlap_weight != INVALID_EDGE_WEIGHT)
             {
                 if (shortest_path_via != SPECIAL_NODEID)
                 {
@@ -170,10 +170,23 @@ alternativePathSearch(SearchEngineData<Algorithm> &search_engine_data,
         shortest_path_weight = std::min(shortest_path_weight, overlap_weight);
     }
 
+    const auto has_valid_shortest_path_weight = shortest_path_weight != INVALID_EDGE_WEIGHT;
+    const auto has_valid_shortest_path_via = shortest_path_via != SPECIAL_NODEID;
+    const auto has_shortest_path = has_valid_shortest_path_weight && has_valid_shortest_path_via;
+
+    if (!has_shortest_path)
+        return InternalManyRoutesResult{};
+
     //
     // Todo: filter via candidate nodes with heuristics
     //
 
+    // Note: unique and remove_if calls below only re-shuffle candidates in-place so that
+    // we never have to call candidate_vias.erase() and can avoid memory (re-) allocations.
+
+    // We only care for unique via nodes on the paths s,via and via,t.
+
+    std::cout << ">>> shortest path weight: " << shortest_path_weight << std::endl;
     std::cout << ">>> number of candidates: " << candidate_vias.size() << std::endl;
 
     std::sort(begin(candidate_vias), end(candidate_vias), [](auto lhs, auto rhs) {
@@ -184,16 +197,29 @@ alternativePathSearch(SearchEngineData<Algorithm> &search_engine_data,
         return lhs.node == rhs.node;
     });
 
-    candidate_vias.erase(it, end(candidate_vias));
+    // Filter by stretch - alternative must not be longer than x times the primary route
 
-    std::cout << ">>> number of unique candidates: " << candidate_vias.size() << std::endl;
+    // Todo: scale epsilon with weight. Higher epsilon for short routes are reasonable.
+    //
+    //  - shortest path 10 minutes, alternative 13 minutes => 0.30 epsilon Ok
+    //  - shortest path 10 hours, alternative 13 hours     => 0.30 epsilon Unreasonable
+    //
+    // We only have generic weights here and no durations without unpacking.
+    // How do we scale the epsilon in a setup where users can pass us anything as weight?
+    const auto over_stretch_limit = [shortest_path_weight](const auto via) {
+        const auto epsilon = 0.05;
+        const auto stretch_weight_limit = (1. + epsilon) * shortest_path_weight;
+        return via.weight > stretch_weight_limit;
+    };
 
-    const auto has_valid_shortest_path_weight = shortest_path_weight != INVALID_EDGE_WEIGHT;
-    const auto has_valid_shortest_path_via = shortest_path_via != SPECIAL_NODEID;
-    const auto has_shortest_path = has_valid_shortest_path_weight && has_valid_shortest_path_via;
+    it = std::remove_if(begin(candidate_vias), it, over_stretch_limit);
 
-    if (!has_shortest_path)
-        return InternalManyRoutesResult{};
+    // Filtered and ranked candidate range
+    const auto first = begin(candidate_vias);
+    const auto last = it;
+    const auto number_of_candidate_vias = last - first;
+
+    std::cout << ">>> number of filtered candidates: " << number_of_candidate_vias << std::endl;
 
     //
     // Reconstruct paths
@@ -209,23 +235,21 @@ alternativePathSearch(SearchEngineData<Algorithm> &search_engine_data,
         PackedPath path;
     };
 
-    std::vector<WeightedViaNodePackedPath> weighted_packed_paths;
-    weighted_packed_paths.reserve(1 + candidate_vias.size());
-
     const auto extract_packed_path_from_heaps = [&](WeightedViaNode via) {
         auto packed_path = retrievePackedPathFromHeap(forward_heap, reverse_heap, via.node);
         return WeightedViaNodePackedPath{std::move(via), std::move(packed_path)};
     };
+
+    std::vector<WeightedViaNodePackedPath> weighted_packed_paths;
+    weighted_packed_paths.reserve(1 + number_of_candidate_vias);
 
     // Store shortest path
     WeightedViaNode shortest_path_weighted_via{shortest_path_via, shortest_path_weight};
     weighted_packed_paths.push_back(extract_packed_path_from_heaps(shortest_path_weighted_via));
 
     // Store all alternative packed paths (if there are any).
-    std::transform(begin(candidate_vias),
-                   end(candidate_vias),
-                   std::back_inserter(weighted_packed_paths),
-                   extract_packed_path_from_heaps);
+    auto into = std::back_inserter(weighted_packed_paths);
+    std::transform(first, last, into, extract_packed_path_from_heaps);
 
     // We have at least one shortest path and potentially many alternative paths in the response.
     std::vector<InternalRouteResult> routes;
