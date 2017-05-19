@@ -57,31 +57,46 @@ alternativePathSearch(SearchEngineData<Algorithm> &search_engine_data,
     // Save nodes in the forward and backward search space overlap as candidates
     //
 
-    NodeID middle = SPECIAL_NODEID;
+    // The single via node in the shortest paths s,via and via,t sub-paths and
+    // the weight for the shortest path s,t we return and compare alternatives to.
+    NodeID shortest_path_via = SPECIAL_NODEID;
+    EdgeWeight shortest_path_weight = INVALID_EDGE_WEIGHT;
 
-    EdgeWeight forward_heap_min = forward_heap.MinKey();
-    EdgeWeight reverse_heap_min = reverse_heap.MinKey();
-
-    EdgeWeight path_weight = INVALID_EDGE_WEIGHT;
+    // The current via node during search spaces overlap stepping and an artificial
+    // weight (overlap factor * shortest path weight) we use as a termination criteria.
+    NodeID overlap_via = SPECIAL_NODEID;
     EdgeWeight overlap_weight = INVALID_EDGE_WEIGHT;
 
     const auto overlap_factor = 1.66;
 
+    // Represents a via middle node where search spaces touch and
+    // the total weight a path (made up of s,via and via,t) has.
+    struct WeightedViaNode
+    {
+        NodeID node;
+        EdgeWeight weight;
+    };
+
+    // All via nodes in the overlapping search space (except the shortest path via node).
+    // Will be filtered and ranked and then used for s,via and via,t alternative paths.
+    std::vector<WeightedViaNode> candidate_vias;
+
+    // The logic below is a bit weird - here's why: we want to re-use the MLD routingStep for
+    // stepping our search space from s and from t. We don't know how far to overlap until we have
+    // the shortest path. Once we have the shortest path we can use its weight to terminate when
+    // we're over factor * weight. We have to set the weight for routingStep to INVALID_EDGE_WEIGHT
+    // so that stepping will continue even after we reached the shortest path upper bound.
+
     const auto force_loop_forward = needsLoopForward(phantom_node_pair);
     const auto force_loop_backward = needsLoopBackwards(phantom_node_pair);
 
-    std::vector<NodeID> candidates;
-
-    // The structure below is a bit weird - here's why: we want to re-use the MLD routingStep for
-    // stepping our search space from s and from t. We don't know how far to overlap until we have
-    // the shortest path. Once we have the shortest path we can use its weight to terminate when
-    // we're over factor * weight. We set the weight for the routingStep to INVALID_EDGE_WEIGHT
-    // so that the routingStep will continue even after we reached the shortest path upper bound.
+    EdgeWeight forward_heap_min = forward_heap.MinKey();
+    EdgeWeight reverse_heap_min = reverse_heap.MinKey();
 
     while (forward_heap.Size() + reverse_heap.Size() > 0)
     {
-        if (path_weight != INVALID_EDGE_WEIGHT)
-            overlap_weight = path_weight * overlap_factor;
+        if (shortest_path_weight != INVALID_EDGE_WEIGHT)
+            overlap_weight = shortest_path_weight * overlap_factor;
 
         // Termination criteria - when we have a shortest path this will guarantee for our overlap.
         const auto keep_going = forward_heap_min + reverse_heap_min < overlap_weight;
@@ -97,7 +112,7 @@ alternativePathSearch(SearchEngineData<Algorithm> &search_engine_data,
             routingStep<FORWARD_DIRECTION>(facade,
                                            forward_heap,
                                            reverse_heap,
-                                           middle,
+                                           overlap_via,
                                            overlap_weight,
                                            force_loop_forward,
                                            force_loop_backward,
@@ -106,14 +121,21 @@ alternativePathSearch(SearchEngineData<Algorithm> &search_engine_data,
             if (!forward_heap.Empty())
                 forward_heap_min = forward_heap.MinKey();
 
-            if (middle != SPECIAL_NODEID)
+            if (overlap_via != SPECIAL_NODEID)
             {
-                candidates.push_back(middle);
+                if (shortest_path_via != SPECIAL_NODEID)
+                {
+                    candidate_vias.push_back(WeightedViaNode{overlap_via, overlap_weight});
+                }
+                else
+                {
+                    shortest_path_via = overlap_via;
+                }
             }
         }
 
         // Adjusting upper bound for forward search
-        path_weight = std::min(path_weight, overlap_weight);
+        shortest_path_weight = std::min(shortest_path_weight, overlap_weight);
         // Force reverse step to not break early when we reached the middle, continue for overlap.
         overlap_weight = INVALID_EDGE_WEIGHT;
 
@@ -122,7 +144,7 @@ alternativePathSearch(SearchEngineData<Algorithm> &search_engine_data,
             routingStep<REVERSE_DIRECTION>(facade,
                                            reverse_heap,
                                            forward_heap,
-                                           middle,
+                                           overlap_via,
                                            overlap_weight,
                                            force_loop_forward,
                                            force_loop_backward,
@@ -131,31 +153,46 @@ alternativePathSearch(SearchEngineData<Algorithm> &search_engine_data,
             if (!reverse_heap.Empty())
                 reverse_heap_min = reverse_heap.MinKey();
 
-            if (middle != SPECIAL_NODEID)
+            if (overlap_via != SPECIAL_NODEID)
             {
-                candidates.push_back(middle);
+                if (shortest_path_via != SPECIAL_NODEID)
+                {
+                    candidate_vias.push_back(WeightedViaNode{overlap_via, overlap_weight});
+                }
+                else
+                {
+                    shortest_path_via = overlap_via;
+                }
             }
         }
 
         // Adjusting upper bound for reverse search
-        path_weight = std::min(path_weight, overlap_weight);
+        shortest_path_weight = std::min(shortest_path_weight, overlap_weight);
     }
 
     //
     // Todo: filter via candidate nodes with heuristics
     //
 
-    std::cout << ">>> number of candidates: " << candidates.size() << std::endl;
+    std::cout << ">>> number of candidates: " << candidate_vias.size() << std::endl;
 
-    std::sort(begin(candidates), end(candidates));
-    auto it = std::unique(begin(candidates), end(candidates));
-    candidates.erase(it, end(candidates));
+    std::sort(begin(candidate_vias), end(candidate_vias), [](auto lhs, auto rhs) {
+        return lhs.node < rhs.node;
+    });
 
-    std::cout << ">>> number of unique candidates: " << candidates.size() << std::endl;
+    auto it = std::unique(begin(candidate_vias), end(candidate_vias), [](auto lhs, auto rhs) {
+        return lhs.node == rhs.node;
+    });
 
-    const auto route_found = path_weight != INVALID_EDGE_WEIGHT && middle != SPECIAL_NODEID;
+    candidate_vias.erase(it, end(candidate_vias));
 
-    if (!route_found)
+    std::cout << ">>> number of unique candidates: " << candidate_vias.size() << std::endl;
+
+    const auto has_valid_shortest_path_weight = shortest_path_weight != INVALID_EDGE_WEIGHT;
+    const auto has_valid_shortest_path_via = shortest_path_via != SPECIAL_NODEID;
+    const auto has_shortest_path = has_valid_shortest_path_weight && has_valid_shortest_path_via;
+
+    if (!has_shortest_path)
         return InternalManyRoutesResult{};
 
     //
@@ -164,41 +201,65 @@ alternativePathSearch(SearchEngineData<Algorithm> &search_engine_data,
 
     // The recursive path unpacking below destructs heaps.
     // We need to save all packed paths from the heaps upfront.
-    const auto extract_packed_path_from_heaps = [&](NodeID middle) {
-        return retrievePackedPathFromHeap(forward_heap, reverse_heap, middle);
+
+    // Represents a complete packed path (made up of s,via,t) and its total weight.
+    struct WeightedViaNodePackedPath
+    {
+        WeightedViaNode via;
+        PackedPath path;
     };
 
-    std::vector<PackedPath> packed_paths;
-    packed_paths.reserve(1 + candidates.size());
+    std::vector<WeightedViaNodePackedPath> weighted_packed_paths;
+    weighted_packed_paths.reserve(1 + candidate_vias.size());
 
-    // Shortest path
-    packed_paths.push_back(extract_packed_path_from_heaps(middle));
+    const auto extract_packed_path_from_heaps = [&](WeightedViaNode via) {
+        auto packed_path = retrievePackedPathFromHeap(forward_heap, reverse_heap, via.node);
+        return WeightedViaNodePackedPath{std::move(via), std::move(packed_path)};
+    };
 
-    // All alternative paths. Potentially empty.
-    std::transform(begin(candidates),
-                   end(candidates),
-                   std::back_inserter(packed_paths),
+    // Store shortest path
+    WeightedViaNode shortest_path_weighted_via{shortest_path_via, shortest_path_weight};
+    weighted_packed_paths.push_back(extract_packed_path_from_heaps(shortest_path_weighted_via));
+
+    // Store all alternative packed paths (if there are any).
+    std::transform(begin(candidate_vias),
+                   end(candidate_vias),
+                   std::back_inserter(weighted_packed_paths),
                    extract_packed_path_from_heaps);
 
+    // We have at least one shortest path and potentially many alternative paths in the response.
     std::vector<InternalRouteResult> routes;
+    routes.reserve(weighted_packed_paths.size());
 
-    for (const auto packed_path : packed_paths)
+    for (const auto weighted_packed_path : weighted_packed_paths)
     {
+        const auto packed_path_weight = weighted_packed_path.via.weight;
+        const auto packed_path_via = weighted_packed_path.via.node;
+
+        const auto &packed_path = weighted_packed_path.path;
+
         //
         // Todo: dup. code with mld::search except for level entry: we run a slight mld::search
         //       adaption here and then dispatch to mld::search for recursively descending down.
         //
-
-        // Beware the edge case when start, middle, end are all the same.
-        // In this case we return a single node, no edges. We also don't unpack.
-        const NodeID source_node = !packed_path.empty() ? std::get<0>(packed_path.front()) : middle;
 
         std::vector<NodeID> unpacked_nodes;
         std::vector<EdgeID> unpacked_edges;
         unpacked_nodes.reserve(packed_path.size());
         unpacked_edges.reserve(packed_path.size());
 
-        unpacked_nodes.push_back(source_node);
+        // Beware the edge case when start, via, end are all the same.
+        // In this case we return a single node, no edges. We also don't unpack.
+        if (packed_path.empty())
+        {
+            const auto source_node = packed_path_via;
+            unpacked_nodes.push_back(source_node);
+        }
+        else
+        {
+            const auto source_node = std::get<0>(packed_path.front());
+            unpacked_nodes.push_back(source_node);
+        }
 
         for (auto const &packed_edge : packed_path)
         {
@@ -249,14 +310,9 @@ alternativePathSearch(SearchEngineData<Algorithm> &search_engine_data,
             }
         }
 
-        // TODO: path_weight needs to change to the actual packed path weight
-        // Above store with packed path and use here - this is wrong at the moment.
-        auto route = extractRoute(facade,
-                                  path_weight, // TODO: Wrong. This is primary weight atm.
-                                  phantom_node_pair,
-                                  unpacked_nodes,
-                                  unpacked_edges);
-        routes.push_back(std::move(route));
+        // Annotate the unpacked path and transform to proper internal route result.
+        routes.push_back(extractRoute(
+            facade, packed_path_weight, phantom_node_pair, unpacked_nodes, unpacked_edges));
     }
 
     return InternalManyRoutesResult{std::move(routes)};
