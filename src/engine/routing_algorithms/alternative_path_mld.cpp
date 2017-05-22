@@ -11,6 +11,8 @@
 #include <unordered_set>
 #include <vector>
 
+#include <boost/function_output_iterator.hpp>
+
 // TODO: debug, remove
 #include <iostream>
 
@@ -29,18 +31,41 @@ using namespace mld;
 namespace
 {
 
-// Uniques candidate nodes. Mutates range in-place.
+using Facade = datafacade::ContiguousInternalMemoryDataFacade<Algorithm>;
+using Partition = partition::MultiLevelPartitionView;
+
+// Filters candidates which are on not unique.
 // Returns an iterator to the uniquified range's new end.
-template <typename RandIt> RandIt makeCandidatesUnique(RandIt first, RandIt last)
+// Note: mutates the range in-place invalidating iterators.
+template <typename RandIt> RandIt filterViaCandidatesByUniqueNodeIds(RandIt first, RandIt last)
 {
     std::sort(first, last, [](auto lhs, auto rhs) { return lhs.node < rhs.node; });
     return std::unique(first, last, [](auto lhs, auto rhs) { return lhs.node == rhs.node; });
 }
 
-// Filter candidates with much higher weight than the primary route. Mutates range in-place.
-// Returns an iterator to the uniquified range's new end.
+// Filters candidates which are on un-important roads.
+// Returns an iterator to the filtered range's new end.
 template <typename RandIt>
-RandIt filterCandidatesByStretch(RandIt first, RandIt last, EdgeWeight weight)
+RandIt filterViaCandidatesByRoadImportance(RandIt first, RandIt last, const Facade &facade)
+{
+    // Todo: the idea here is to filter out alternatives where the via candidate is not on a
+    // high-priority road. We should experiment if this is really needed or if the boundary
+    // nodes the mld search space gives us already provides us with reasonable via candidates.
+    //
+    // Implementation: we already have `RoadClassification` from guidance. We need to serialize
+    // it to disk and then in the facades read it in again providing `IsImportantRoad(NodeID)`.
+    // Note: serialize out bit vector keyed by node id with 0/1 <=> unimportant/important.
+    (void)first;
+    (void)last;
+    (void)facade;
+
+    return last;
+}
+
+// Filters candidates with much higher weight than the primary route. Mutates range in-place.
+// Returns an iterator to the filtered range's new end.
+template <typename RandIt>
+RandIt filterViaCandidatesByStretch(RandIt first, RandIt last, EdgeWeight weight)
 {
     // Todo: scale epsilon with weight. Higher epsilon for short routes are reasonable.
     //
@@ -58,6 +83,84 @@ RandIt filterCandidatesByStretch(RandIt first, RandIt last, EdgeWeight weight)
     };
 
     return std::remove_if(first, last, over_weight_limit);
+}
+
+// Set similarity, normalized to [0, 1]
+template <typename Set> double jaccardSimilarity(const Set &lhs, const Set &rhs)
+{
+    if (lhs.empty() || rhs.empty())
+        return 1.;
+
+    std::size_t num_intersect = 0;
+    auto out = boost::make_function_output_iterator([&](auto) { num_intersect += 1; });
+
+    std::set_intersection(begin(lhs), end(lhs), begin(rhs), end(rhs), out);
+
+    std::size_t num_union = lhs.size() + rhs.size() - num_intersect;
+
+    const auto similarity = static_cast<double>(num_intersect) / static_cast<double>(num_union);
+
+    BOOST_ASSERT(similarity >= 0.);
+    BOOST_ASSERT(similarity <= 1.);
+
+    return similarity;
+}
+
+// The packed paths' similarity in [0, 1] for dis-similarity and equality, respectively.
+inline double normalizedPackedPathSharing(const Partition &partition,
+                                          const PackedPath &lhs,
+                                          const PackedPath &rhs)
+{
+    if (lhs.empty() || rhs.empty())
+        return 0.;
+
+    const auto number_of_levels = partition.GetNumberOfLevels();
+    BOOST_ASSERT(number_of_levels >= 1);
+
+    // Todo: on which level does it make sense to compute sharing on? Should sharing be a
+    // linear combination based on level and sharing on each level? Needs experimentation.
+    const auto level = 1;
+
+    const auto get_cell = [&](auto node) { return partition.GetCell(level, node); };
+
+    std::vector<CellID> lhs_cells(lhs.size() + 1);
+    std::vector<CellID> rhs_cells(rhs.size() + 1);
+
+    // Transform edges (from, to) to node ids and then to cell ids for each node id.
+
+    lhs_cells[0] = get_cell(std::get<0>(lhs.front()));
+    rhs_cells[0] = get_cell(std::get<0>(rhs.front()));
+
+    for (std::size_t i = 0; i < lhs.size(); ++i)
+        lhs_cells[i + 1] = get_cell(std::get<1>(lhs[i]));
+
+    for (std::size_t i = 0; i < rhs.size(); ++i)
+        rhs_cells[i + 1] = get_cell(std::get<1>(rhs[i]));
+
+    std::sort(begin(lhs_cells), end(lhs_cells));
+    std::sort(begin(rhs_cells), end(rhs_cells));
+
+    // Todo: do we need to scale sharing with edge weights in some sort?
+    // Is sharing based on cells only already good enough? Needs experimentation.
+
+    return jaccardSimilarity(lhs_cells, rhs_cells);
+}
+
+// Filters packed paths with similar cells compared to the primary route. Mutates range in-place.
+// Returns an iterator to the filtered range's new end.
+template <typename RandIt>
+RandIt filterPackedPathsByCellSharing(const PackedPath &path,
+                                      const Partition &partition,
+                                      RandIt first,
+                                      RandIt last)
+{
+    const auto gamma = 0.75;
+
+    const auto over_sharing_limit = [&](const auto &packed) {
+        return normalizedPackedPathSharing(partition, path, packed.path) > gamma;
+    };
+
+    return std::remove_if(first, last, over_sharing_limit);
 }
 
 } // anon. ns
@@ -214,22 +317,20 @@ alternativePathSearch(SearchEngineData<Algorithm> &search_engine_data,
     if (!has_shortest_path)
         return InternalManyRoutesResult{};
 
+    std::cout << ">>> shortest path weight: " << shortest_path_weight << std::endl;
+    std::cout << ">>> number of candidates: " << candidate_vias.size() << std::endl;
+
     //
     // Todo: filter via candidate nodes with heuristics
     //
 
-    // Note: unique and remove_if calls below only re-shuffle candidates in-place so that
-    // we never have to call candidate_vias.erase() and can avoid memory (re-) allocations.
-
-    // We only care for unique via nodes on the paths s,via and via,t.
-
-    std::cout << ">>> shortest path weight: " << shortest_path_weight << std::endl;
-    std::cout << ">>> number of candidates: " << candidate_vias.size() << std::endl;
-
+    // Note: filter pipeline below only makes range smaller; no need to erase items
+    // from the vector when we can mutate in-place and for filtering adjust iterators.
     auto it = end(candidate_vias);
 
-    it = makeCandidatesUnique(begin(candidate_vias), it);
-    it = filterCandidatesByStretch(begin(candidate_vias), it, shortest_path_weight);
+    it = filterViaCandidatesByUniqueNodeIds(begin(candidate_vias), it);
+    it = filterViaCandidatesByRoadImportance(begin(candidate_vias), it, facade);
+    it = filterViaCandidatesByStretch(begin(candidate_vias), it, shortest_path_weight);
 
     // Filtered and ranked candidate range
     const auto first = begin(candidate_vias);
@@ -268,16 +369,28 @@ alternativePathSearch(SearchEngineData<Algorithm> &search_engine_data,
     auto into = std::back_inserter(weighted_packed_paths);
     std::transform(first, last, into, extract_packed_path_from_heaps);
 
+    const auto alternative_paths_first = begin(weighted_packed_paths) + 1;
+    auto alternative_paths_last = end(weighted_packed_paths);
+
+    alternative_paths_last = filterPackedPathsByCellSharing(weighted_packed_paths.front().path,
+                                                            partition,
+                                                            alternative_paths_first,
+                                                            alternative_paths_last);
+
+    const auto paths_first = begin(weighted_packed_paths);
+    const auto paths_last = alternative_paths_last;
+    const auto number_of_packed_paths = paths_last - paths_first;
+
     // We have at least one shortest path and potentially many alternative paths in the response.
     std::vector<InternalRouteResult> routes;
-    routes.reserve(weighted_packed_paths.size());
+    routes.reserve(number_of_packed_paths);
 
-    for (const auto weighted_packed_path : weighted_packed_paths)
+    for (auto it = paths_first; it != paths_last; ++it)
     {
-        const auto packed_path_weight = weighted_packed_path.via.weight;
-        const auto packed_path_via = weighted_packed_path.via.node;
+        const auto packed_path_weight = it->via.weight;
+        const auto packed_path_via = it->via.node;
 
-        const auto &packed_path = weighted_packed_path.path;
+        const auto &packed_path = it->path;
 
         //
         // Todo: dup. code with mld::search except for level entry: we run a slight mld::search
