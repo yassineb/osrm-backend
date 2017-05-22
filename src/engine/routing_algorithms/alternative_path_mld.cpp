@@ -25,6 +25,43 @@ namespace routing_algorithms
 // This alternative implementation works only for mld.
 using namespace mld;
 
+// Implementation details
+namespace
+{
+
+// Uniques candidate nodes. Mutates range in-place.
+// Returns an iterator to the uniquified range's new end.
+template <typename RandIt> RandIt makeCandidatesUnique(RandIt first, RandIt last)
+{
+    std::sort(first, last, [](auto lhs, auto rhs) { return lhs.node < rhs.node; });
+    return std::unique(first, last, [](auto lhs, auto rhs) { return lhs.node == rhs.node; });
+}
+
+// Filter candidates with much higher weight than the primary route. Mutates range in-place.
+// Returns an iterator to the uniquified range's new end.
+template <typename RandIt>
+RandIt filterCandidatesByStretch(RandIt first, RandIt last, EdgeWeight weight)
+{
+    // Todo: scale epsilon with weight. Higher epsilon for short routes are reasonable.
+    //
+    //  - shortest path 10 minutes, alternative 13 minutes => 0.30 epsilon Ok
+    //  - shortest path 10 hours, alternative 13 hours     => 0.30 epsilon Unreasonable
+    //
+    // We only have generic weights here and no durations without unpacking.
+    // How do we scale the epsilon in a setup where users can pass us anything as weight?
+
+    const auto epsilon = 0.15;
+    const auto stretch_weight_limit = (1. + epsilon) * weight;
+
+    const auto over_weight_limit = [=](const auto via) {
+        return via.weight > stretch_weight_limit;
+    };
+
+    return std::remove_if(first, last, over_weight_limit);
+}
+
+} // anon. ns
+
 // Alternative Routes for MLD.
 //
 // Start search from s and continue "for a while" when t was found. Save all vertices.
@@ -189,30 +226,10 @@ alternativePathSearch(SearchEngineData<Algorithm> &search_engine_data,
     std::cout << ">>> shortest path weight: " << shortest_path_weight << std::endl;
     std::cout << ">>> number of candidates: " << candidate_vias.size() << std::endl;
 
-    std::sort(begin(candidate_vias), end(candidate_vias), [](auto lhs, auto rhs) {
-        return lhs.node < rhs.node;
-    });
+    auto it = end(candidate_vias);
 
-    auto it = std::unique(begin(candidate_vias), end(candidate_vias), [](auto lhs, auto rhs) {
-        return lhs.node == rhs.node;
-    });
-
-    // Filter by stretch - alternative must not be longer than x times the primary route
-
-    // Todo: scale epsilon with weight. Higher epsilon for short routes are reasonable.
-    //
-    //  - shortest path 10 minutes, alternative 13 minutes => 0.30 epsilon Ok
-    //  - shortest path 10 hours, alternative 13 hours     => 0.30 epsilon Unreasonable
-    //
-    // We only have generic weights here and no durations without unpacking.
-    // How do we scale the epsilon in a setup where users can pass us anything as weight?
-    const auto over_stretch_limit = [shortest_path_weight](const auto via) {
-        const auto epsilon = 0.05;
-        const auto stretch_weight_limit = (1. + epsilon) * shortest_path_weight;
-        return via.weight > stretch_weight_limit;
-    };
-
-    it = std::remove_if(begin(candidate_vias), it, over_stretch_limit);
+    it = makeCandidatesUnique(begin(candidate_vias), it);
+    it = filterCandidatesByStretch(begin(candidate_vias), it, shortest_path_weight);
 
     // Filtered and ranked candidate range
     const auto first = begin(candidate_vias);
