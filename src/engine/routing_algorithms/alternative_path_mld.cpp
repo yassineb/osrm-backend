@@ -1,13 +1,14 @@
 #include "engine/routing_algorithms/alternative_path.hpp"
 #include "engine/routing_algorithms/routing_base_mld.hpp"
 
-#include "util/integer_range.hpp"
+#include "util/static_assert.hpp"
 
 #include <boost/assert.hpp>
 
 #include <algorithm>
 #include <iterator>
 #include <memory>
+#include <type_traits>
 #include <unordered_set>
 #include <vector>
 
@@ -34,11 +35,30 @@ namespace
 using Facade = datafacade::ContiguousInternalMemoryDataFacade<Algorithm>;
 using Partition = partition::MultiLevelPartitionView;
 
+// Represents a via middle node where search spaces touch and
+// the total weight a path (made up of s,via and via,t) has.
+struct WeightedViaNode
+{
+    NodeID node;
+    EdgeWeight weight;
+};
+
+// Represents a complete packed path (made up of s,via and via,t)
+// its total weight and the via node used to construct the path.
+struct WeightedViaNodePackedPath
+{
+    WeightedViaNode via;
+    PackedPath path;
+};
+
 // Filters candidates which are on not unique.
 // Returns an iterator to the uniquified range's new end.
 // Note: mutates the range in-place invalidating iterators.
 template <typename RandIt> RandIt filterViaCandidatesByUniqueNodeIds(RandIt first, RandIt last)
 {
+    util::static_assert_iter_category<RandIt, std::random_access_iterator_tag>();
+    util::static_assert_iter_value<RandIt, WeightedViaNode>();
+
     std::sort(first, last, [](auto lhs, auto rhs) { return lhs.node < rhs.node; });
     return std::unique(first, last, [](auto lhs, auto rhs) { return lhs.node == rhs.node; });
 }
@@ -48,6 +68,8 @@ template <typename RandIt> RandIt filterViaCandidatesByUniqueNodeIds(RandIt firs
 template <typename RandIt>
 RandIt filterViaCandidatesByRoadImportance(RandIt first, RandIt last, const Facade &facade)
 {
+    util::static_assert_iter_category<RandIt, std::random_access_iterator_tag>();
+
     // Todo: the idea here is to filter out alternatives where the via candidate is not on a
     // high-priority road. We should experiment if this is really needed or if the boundary
     // nodes the mld search space gives us already provides us with reasonable via candidates.
@@ -67,6 +89,8 @@ RandIt filterViaCandidatesByRoadImportance(RandIt first, RandIt last, const Faca
 template <typename RandIt>
 RandIt filterViaCandidatesByStretch(RandIt first, RandIt last, EdgeWeight weight)
 {
+    util::static_assert_iter_category<RandIt, std::random_access_iterator_tag>();
+
     // Todo: scale epsilon with weight. Higher epsilon for short routes are reasonable.
     //
     //  - shortest path 10 minutes, alternative 13 minutes => 0.30 epsilon Ok
@@ -86,17 +110,23 @@ RandIt filterViaCandidatesByStretch(RandIt first, RandIt last, EdgeWeight weight
 }
 
 // Set similarity, normalized to [0, 1]
-template <typename Set> double jaccardSimilarity(const Set &lhs, const Set &rhs)
+template <typename RandIt>
+double jaccardSimilarity(RandIt first1, RandIt last1, RandIt first2, RandIt last2)
 {
-    if (lhs.empty() || rhs.empty())
+    util::static_assert_iter_category<RandIt, std::random_access_iterator_tag>();
+
+    const auto lhs_size = last1 - first1;
+    const auto rhs_size = last2 - first2;
+
+    if (lhs_size == 0 || rhs_size == 0)
         return 1.;
 
     std::size_t num_intersect = 0;
     auto out = boost::make_function_output_iterator([&](auto) { num_intersect += 1; });
 
-    std::set_intersection(begin(lhs), end(lhs), begin(rhs), end(rhs), out);
+    std::set_intersection(first1, last1, first2, last2, out);
 
-    std::size_t num_union = lhs.size() + rhs.size() - num_intersect;
+    std::size_t num_union = lhs_size + rhs_size - num_intersect;
 
     const auto similarity = static_cast<double>(num_intersect) / static_cast<double>(num_union);
 
@@ -143,7 +173,7 @@ inline double normalizedPackedPathSharing(const Partition &partition,
     // Todo: do we need to scale sharing with edge weights in some sort?
     // Is sharing based on cells only already good enough? Needs experimentation.
 
-    return jaccardSimilarity(lhs_cells, rhs_cells);
+    return jaccardSimilarity(begin(lhs_cells), end(lhs_cells), begin(rhs_cells), end(rhs_cells));
 }
 
 // Filters packed paths with similar cells compared to the primary route. Mutates range in-place.
@@ -154,6 +184,8 @@ RandIt filterPackedPathsByCellSharing(const PackedPath &path,
                                       RandIt first,
                                       RandIt last)
 {
+    util::static_assert_iter_category<RandIt, std::random_access_iterator_tag>();
+
     const auto gamma = 0.75;
 
     const auto over_sharing_limit = [&](const auto &packed) {
@@ -208,14 +240,6 @@ alternativePathSearch(SearchEngineData<Algorithm> &search_engine_data,
     EdgeWeight overlap_weight = INVALID_EDGE_WEIGHT;
 
     const auto overlap_factor = 1.66;
-
-    // Represents a via middle node where search spaces touch and
-    // the total weight a path (made up of s,via and via,t) has.
-    struct WeightedViaNode
-    {
-        NodeID node;
-        EdgeWeight weight;
-    };
 
     // All via nodes in the overlapping search space (except the shortest path via node).
     // Will be filtered and ranked and then used for s,via and via,t alternative paths.
@@ -345,13 +369,6 @@ alternativePathSearch(SearchEngineData<Algorithm> &search_engine_data,
 
     // The recursive path unpacking below destructs heaps.
     // We need to save all packed paths from the heaps upfront.
-
-    // Represents a complete packed path (made up of s,via,t) and its total weight.
-    struct WeightedViaNodePackedPath
-    {
-        WeightedViaNode via;
-        PackedPath path;
-    };
 
     const auto extract_packed_path_from_heaps = [&](WeightedViaNode via) {
         auto packed_path = retrievePackedPathFromHeap(forward_heap, reverse_heap, via.node);
