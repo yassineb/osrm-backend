@@ -285,7 +285,7 @@ alternativePathSearch(SearchEngineData<Algorithm> &search_engine_data,
             if (!forward_heap.Empty())
                 forward_heap_min = forward_heap.MinKey();
 
-            if (overlap_weight != INVALID_EDGE_WEIGHT)
+            if (overlap_weight != INVALID_EDGE_WEIGHT && overlap_via != SPECIAL_NODEID)
             {
                 if (shortest_path_via != SPECIAL_NODEID)
                 {
@@ -317,7 +317,7 @@ alternativePathSearch(SearchEngineData<Algorithm> &search_engine_data,
             if (!reverse_heap.Empty())
                 reverse_heap_min = reverse_heap.MinKey();
 
-            if (overlap_weight != INVALID_EDGE_WEIGHT)
+            if (overlap_weight != INVALID_EDGE_WEIGHT && overlap_via != SPECIAL_NODEID)
             {
                 if (shortest_path_via != SPECIAL_NODEID)
                 {
