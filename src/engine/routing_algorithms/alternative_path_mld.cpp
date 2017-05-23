@@ -118,33 +118,6 @@ RandIt filterViaCandidatesByStretch(RandIt first, RandIt last, EdgeWeight weight
     return std::remove_if(first, last, over_weight_limit);
 }
 
-// Set similarity, normalized to [0, 1].
-template <typename RandIt>
-double jaccardSimilarity(RandIt first1, RandIt last1, RandIt first2, RandIt last2)
-{
-    util::static_assert_iter_category<RandIt, std::random_access_iterator_tag>();
-
-    const auto lhs_size = last1 - first1;
-    const auto rhs_size = last2 - first2;
-
-    if (lhs_size == 0 || rhs_size == 0)
-        return 1.;
-
-    std::size_t num_intersect = 0;
-    auto out = boost::make_function_output_iterator([&](auto) { num_intersect += 1; });
-
-    std::set_intersection(first1, last1, first2, last2, out);
-
-    std::size_t num_union = lhs_size + rhs_size - num_intersect;
-
-    const auto similarity = static_cast<double>(num_intersect) / static_cast<double>(num_union);
-
-    BOOST_ASSERT(similarity >= 0.);
-    BOOST_ASSERT(similarity <= 1.);
-
-    return similarity;
-}
-
 // The packed paths' similarity in [0, 1] for dis-similarity and equality, respectively.
 inline double normalizedPackedPathSharing(const Partition &partition,
                                           const PackedPath &lhs,
@@ -182,7 +155,16 @@ inline double normalizedPackedPathSharing(const Partition &partition,
     // Todo: do we need to scale sharing with edge weights in some sort?
     // Is sharing based on cells only already good enough? Needs experimentation.
 
-    return jaccardSimilarity(begin(lhs_cells), end(lhs_cells), begin(rhs_cells), end(rhs_cells));
+    std::size_t num_different = 0;
+    auto out = boost::make_function_output_iterator([&](auto) { num_different += 1; });
+    std::set_difference(begin(lhs_cells), end(lhs_cells), begin(rhs_cells), end(rhs_cells), out);
+
+    const auto difference = static_cast<double>(num_different) / lhs.size();
+
+    BOOST_ASSERT(difference >= 0.);
+    BOOST_ASSERT(difference <= 1.);
+
+    return 1. - difference;
 }
 
 // Filters packed paths with similar cells compared to the primary route. Mutates range in-place.
