@@ -359,6 +359,11 @@ alternativePathSearch(SearchEngineData<Algorithm> &search_engine_data,
     it = filterViaCandidatesByRoadImportance(begin(candidate_vias), it, facade);
     it = filterViaCandidatesByStretch(begin(candidate_vias), it, shortest_path_weight);
 
+    // Pre-rank by weight; sharing filtering below then discards by similarity.
+    std::sort(begin(candidate_vias), it, [](const auto lhs, const auto rhs) {
+        return lhs.weight < rhs.weight;
+    });
+
     // Filtered and ranked candidate range
     const auto first = begin(candidate_vias);
     const auto last = it;
