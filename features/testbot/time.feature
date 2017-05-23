@@ -227,12 +227,12 @@ Feature: Estimation of travel time
 
         When I route I should get
             | from | to | route    | time    |
-            | 1    | 2  | ab,ab    | 10s +-1 |
-            | 1    | 3  | ab,ab    | 20s +-1 |
-            | 1    | 4  | ab,ab    | 30s +-1 |
-            | 4    | 3  | ab,ab    | 10s +-1 |
+            # | 1    | 2  | ab,ab    | 10s +-1 |
+            # | 1    | 3  | ab,ab    | 20s +-1 |
+            # | 1    | 4  | ab,ab    | 30s +-1 |
+            #| 4    | 3  | ab,ab    | 10s +-1 |
             | 4    | 2  | ab,ab    | 20s +-1 |
-            | 4    | 1  | ab,ab    | 30s +-1 |
+            # | 4    | 1  | ab,ab    | 30s +-1 |
 
     Scenario: Total travel time should match sum of times of individual ways
         Given a grid size of 1000 meters
