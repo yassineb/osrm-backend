@@ -10,6 +10,7 @@
 #include <memory>
 #include <type_traits>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 
 #include <boost/function_output_iterator.hpp>
@@ -32,6 +33,8 @@ using namespace mld;
 namespace
 {
 
+// Maximum number of alternative paths to return.
+const constexpr auto kMaxAlternatives = 3;
 // Alternative paths length requirement (stretch).
 // At most 15% longer then the shortest path.
 const constexpr auto kEpsilon = 0.15;
@@ -115,7 +118,7 @@ RandIt filterViaCandidatesByStretch(RandIt first, RandIt last, EdgeWeight weight
     return std::remove_if(first, last, over_weight_limit);
 }
 
-// Set similarity, normalized to [0, 1]
+// Set similarity, normalized to [0, 1].
 template <typename RandIt>
 double jaccardSimilarity(RandIt first1, RandIt last1, RandIt first2, RandIt last2)
 {
@@ -229,9 +232,7 @@ alternativePathSearch(SearchEngineData<Algorithm> &search_engine_data,
 
     insertNodesInHeaps(forward_heap, reverse_heap, phantom_node_pair);
 
-    //
-    // Save nodes in the forward and backward search space overlap as candidates
-    //
+    // Saves nodes in the forward and backward search space overlap as candidates
 
     // The single via node in the shortest paths s,via and via,t sub-paths and
     // the weight for the shortest path s,t we return and compare alternatives to.
@@ -348,9 +349,7 @@ alternativePathSearch(SearchEngineData<Algorithm> &search_engine_data,
     std::cout << ">>> shortest path weight: " << shortest_path_weight << std::endl;
     std::cout << ">>> number of candidates: " << candidate_vias.size() << std::endl;
 
-    //
-    // Todo: filter via candidate nodes with heuristics
-    //
+    // Filters via candidate nodes with heuristics
 
     // Note: filter pipeline below only makes range smaller; no need to erase items
     // from the vector when we can mutate in-place and for filtering adjust iterators.
@@ -367,10 +366,7 @@ alternativePathSearch(SearchEngineData<Algorithm> &search_engine_data,
 
     std::cout << ">>> number of filtered candidates: " << number_of_candidate_vias << std::endl;
 
-    //
-    // Reconstruct paths
-    //
-
+    // Reconstruct packed paths from the heaps.
     // The recursive path unpacking below destructs heaps.
     // We need to save all packed paths from the heaps upfront.
 
@@ -390,16 +386,39 @@ alternativePathSearch(SearchEngineData<Algorithm> &search_engine_data,
     auto into = std::back_inserter(weighted_packed_paths);
     std::transform(first, last, into, extract_packed_path_from_heaps);
 
+    // Filter packed paths with heuristics
+
     const auto alternative_paths_first = begin(weighted_packed_paths) + 1;
     auto alternative_paths_last = end(weighted_packed_paths);
+    const auto number_of_alternative_paths = alternative_paths_last - alternative_paths_first;
 
-    alternative_paths_last = filterPackedPathsByCellSharing(weighted_packed_paths.front().path,
-                                                            partition,
-                                                            alternative_paths_first,
-                                                            alternative_paths_last);
+    // Todo: refactor - this is ugly af
+
+    auto number_of_requested_alternative_paths =
+        std::min(static_cast<std::size_t>(kMaxAlternatives),
+                 static_cast<std::size_t>(number_of_alternative_paths));
+
+    for (std::size_t i = 1; i < number_of_requested_alternative_paths; ++i)
+    {
+        for (std::size_t j = 0; j < i; ++j)
+        {
+            alternative_paths_last =
+                filterPackedPathsByCellSharing(weighted_packed_paths[j].path,
+                                               partition,
+                                               begin(weighted_packed_paths) + i,
+                                               alternative_paths_last);
+        }
+    }
+
+    number_of_requested_alternative_paths =
+        std::min(static_cast<std::size_t>(kMaxAlternatives),
+                 static_cast<std::size_t>(alternative_paths_last - alternative_paths_first));
+
+    // ^ refactor
 
     const auto paths_first = begin(weighted_packed_paths);
-    const auto paths_last = alternative_paths_last;
+    const auto paths_last =
+        begin(weighted_packed_paths) + 1 + number_of_requested_alternative_paths;
     const auto number_of_packed_paths = paths_last - paths_first;
 
     // We have at least one shortest path and potentially many alternative paths in the response.
