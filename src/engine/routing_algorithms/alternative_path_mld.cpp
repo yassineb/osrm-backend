@@ -29,6 +29,9 @@ namespace routing_algorithms
 // This alternative implementation works only for mld.
 using namespace mld;
 
+using Facade = datafacade::ContiguousInternalMemoryDataFacade<Algorithm>;
+using Partition = partition::MultiLevelPartitionView;
+
 // Implementation details
 namespace
 {
@@ -42,11 +45,8 @@ const constexpr auto kEpsilon = 0.15;
 // At least 25% different than the shortest path.
 const constexpr auto kGamma = 0.75;
 
-using Facade = datafacade::ContiguousInternalMemoryDataFacade<Algorithm>;
-using Partition = partition::MultiLevelPartitionView;
-
-// Represents a via middle node where search spaces touch and
-// the total weight a path (made up of s,via and via,t) has.
+// Represents a via middle node where forward (from s) and backward (from t)
+// search spaces overlap and the weight a path (made up of s,via and via,t) has.
 struct WeightedViaNode
 {
     NodeID node;
@@ -127,6 +127,7 @@ inline double normalizedPackedPathSharing(const Partition &partition,
         return 0.;
 
     const auto number_of_levels = partition.GetNumberOfLevels();
+    (void)number_of_levels;
     BOOST_ASSERT(number_of_levels >= 1);
 
     // Todo: on which level does it make sense to compute sharing on? Should sharing be a
