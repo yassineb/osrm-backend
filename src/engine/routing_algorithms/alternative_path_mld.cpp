@@ -32,6 +32,13 @@ using namespace mld;
 namespace
 {
 
+// Alternative paths length requirement (stretch).
+// At most 15% longer then the shortest path.
+const constexpr auto kEpsilon = 0.15;
+// Alternative paths similarity requirement (sharing).
+// At least 25% different than the shortest path.
+const constexpr auto kGamma = 0.75;
+
 using Facade = datafacade::ContiguousInternalMemoryDataFacade<Algorithm>;
 using Partition = partition::MultiLevelPartitionView;
 
@@ -99,8 +106,7 @@ RandIt filterViaCandidatesByStretch(RandIt first, RandIt last, EdgeWeight weight
     // We only have generic weights here and no durations without unpacking.
     // How do we scale the epsilon in a setup where users can pass us anything as weight?
 
-    const auto epsilon = 0.15;
-    const auto stretch_weight_limit = (1. + epsilon) * weight;
+    const auto stretch_weight_limit = (1. + kEpsilon) * weight;
 
     const auto over_weight_limit = [=](const auto via) {
         return via.weight > stretch_weight_limit;
@@ -186,10 +192,8 @@ RandIt filterPackedPathsByCellSharing(const PackedPath &path,
 {
     util::static_assert_iter_category<RandIt, std::random_access_iterator_tag>();
 
-    const auto gamma = 0.75;
-
     const auto over_sharing_limit = [&](const auto &packed) {
-        return normalizedPackedPathSharing(partition, path, packed.path) > gamma;
+        return normalizedPackedPathSharing(partition, path, packed.path) > kGamma;
     };
 
     return std::remove_if(first, last, over_sharing_limit);
