@@ -404,7 +404,7 @@ void Sol2ScriptingEnvironment::InitContext(LuaScriptingContext &context)
 
     // set constants in 'constants' table
     context.state["constants"] = context.state.create_table_with(
-        "max_turn_weight", Sol2ScriptingEnvironment::MAX_TURN_WEIGHT
+        "max_turn_weight", std::numeric_limits<TurnPenalty>::max()
     );
 
     // read properties from 'profile' table
@@ -615,13 +615,14 @@ void Sol2ScriptingEnvironment::ProcessTurn(ExtractionTurn &turn)
         {
             turn_function(turn);
 
-            if( turn.weight == MAX_TURN_WEIGHT )
-              turn.weight = context.properties.GetMaxTurnWeight();
 
             // Turn weight falls back to the duration value in deciseconds
             // or uses the extracted unit-less weight value
             if (context.properties.fallback_to_duration)
                 turn.weight = turn.duration;
+            else
+              // cap turn weight to max turn weight, which depend on weight precision
+              turn.weight = std::min(turn.weight, context.properties.GetMaxTurnWeight());
         }
 
         break;
