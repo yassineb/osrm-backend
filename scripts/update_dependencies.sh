@@ -65,8 +65,8 @@ read -p "Update rapidjson (y/n) " ok
 if [[ $ok =~ [yY] ]]
 then
   if [ -d "third_party/rapidjson" ]; then
-    git subtree pull -P third_party/rapidjson/rapidjson/ $RAPIDJSON_REPO $RAPIDJSON_TAG --squash
+    git subtree pull -P third_party/rapidjson/ $RAPIDJSON_REPO $RAPIDJSON_TAG --squash
   else
-    git subtree add -P third_party/rapidjson/rapidjson/ $RAPIDJSON_REPO $RAPIDJSON_TAG --squash
+    git subtree add -P third_party/rapidjson/ $RAPIDJSON_REPO $RAPIDJSON_TAG --squash
   fi
 fi
