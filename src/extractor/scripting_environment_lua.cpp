@@ -473,10 +473,6 @@ void Sol2ScriptingEnvironment::InitContext(LuaScriptingContext &context)
     // Assert that version-dependent properties were not changed by profile
     switch (context.api_version)
     {
-    case 1:
-        BOOST_ASSERT(context.properties.GetUturnPenalty() == 0);
-        BOOST_ASSERT(context.properties.GetTrafficSignalPenalty() == 0);
-        break;
     case 0:
         BOOST_ASSERT(context.properties.GetWeightName() == "duration");
         break;
