@@ -403,42 +403,45 @@ void Sol2ScriptingEnvironment::InitContext(LuaScriptingContext &context)
 
     // read properties from 'profile' table
     sol::optional<std::string> weight_name = context.state["profile"]["weight_name"];
-    if( weight_name != sol::nullopt)
-      context.properties.SetWeightName( weight_name.value() );
+    if (weight_name != sol::nullopt)
+        context.properties.SetWeightName(weight_name.value());
 
-    sol::optional<std::int32_t> traffic_signal_penalty = context.state["profile"]["traffic_signal_penalty"];
-    if( traffic_signal_penalty != sol::nullopt)
-      context.properties.SetTrafficSignalPenalty( traffic_signal_penalty.value() );
+    sol::optional<std::int32_t> traffic_signal_penalty =
+        context.state["profile"]["traffic_signal_penalty"];
+    if (traffic_signal_penalty != sol::nullopt)
+        context.properties.SetTrafficSignalPenalty(traffic_signal_penalty.value());
 
     sol::optional<std::int32_t> u_turn_penalty = context.state["profile"]["u_turn_penalty"];
-    if( u_turn_penalty != sol::nullopt)
-      context.properties.SetUturnPenalty( u_turn_penalty.value() );
+    if (u_turn_penalty != sol::nullopt)
+        context.properties.SetUturnPenalty(u_turn_penalty.value());
 
-    sol::optional<double> max_speed_for_map_matching = context.state["profile"]["max_speed_for_map_matching"];
-    if( max_speed_for_map_matching != sol::nullopt)
-      context.properties.SetMaxSpeedForMapMatching( max_speed_for_map_matching.value() );
+    sol::optional<double> max_speed_for_map_matching =
+        context.state["profile"]["max_speed_for_map_matching"];
+    if (max_speed_for_map_matching != sol::nullopt)
+        context.properties.SetMaxSpeedForMapMatching(max_speed_for_map_matching.value());
 
-    sol::optional<bool> continue_straight_at_waypoint = context.state["profile"]["continue_straight_at_waypoint"];
-    if( continue_straight_at_waypoint != sol::nullopt)
-      context.properties.continue_straight_at_waypoint = continue_straight_at_waypoint.value();
+    sol::optional<bool> continue_straight_at_waypoint =
+        context.state["profile"]["continue_straight_at_waypoint"];
+    if (continue_straight_at_waypoint != sol::nullopt)
+        context.properties.continue_straight_at_waypoint = continue_straight_at_waypoint.value();
 
     sol::optional<bool> use_turn_restrictions = context.state["profile"]["use_turn_restrictions"];
-    if( use_turn_restrictions != sol::nullopt)
-      context.properties.use_turn_restrictions = use_turn_restrictions.value();
+    if (use_turn_restrictions != sol::nullopt)
+        context.properties.use_turn_restrictions = use_turn_restrictions.value();
 
     sol::optional<bool> left_hand_driving = context.state["profile"]["left_hand_driving"];
-    if( left_hand_driving != sol::nullopt)
-      context.properties.left_hand_driving = left_hand_driving.value();
+    if (left_hand_driving != sol::nullopt)
+        context.properties.left_hand_driving = left_hand_driving.value();
 
     sol::optional<unsigned> weight_precision = context.state["profile"]["weight_precision"];
-    if( weight_precision != sol::nullopt)
-      context.properties.weight_precision = weight_precision.value();
+    if (weight_precision != sol::nullopt)
+        context.properties.weight_precision = weight_precision.value();
 
     sol::optional<bool> force_split_edges = context.state["profile"]["force_split_edges"];
-    if( force_split_edges != sol::nullopt)
-      context.properties.force_split_edges = force_split_edges.value();
+    if (force_split_edges != sol::nullopt)
+        context.properties.force_split_edges = force_split_edges.value();
 
-    if(auto profile = context.state["profile"])
+    if (auto profile = context.state["profile"])
     { // set computed profile properties
         profile["max_turn_weight"] = context.properties.GetMaxTurnWeight();
     }
@@ -610,14 +613,13 @@ void Sol2ScriptingEnvironment::ProcessTurn(ExtractionTurn &turn)
         {
             turn_function(turn);
 
-
             // Turn weight falls back to the duration value in deciseconds
             // or uses the extracted unit-less weight value
             if (context.properties.fallback_to_duration)
                 turn.weight = turn.duration;
             else
-              // cap turn weight to max turn weight, which depend on weight precision
-              turn.weight = std::min(turn.weight, context.properties.GetMaxTurnWeight());
+                // cap turn weight to max turn weight, which depend on weight precision
+                turn.weight = std::min(turn.weight, context.properties.GetMaxTurnWeight());
         }
 
         break;
