@@ -401,12 +401,6 @@ void Sol2ScriptingEnvironment::InitContext(LuaScriptingContext &context)
 
     context.state.script_file(file_name);
 
-
-    // set constants in 'constants' table
-    context.state["constants"] = context.state.create_table_with(
-        "max_turn_weight", std::numeric_limits<TurnPenalty>::max()
-    );
-
     // read properties from 'profile' table
     sol::optional<std::string> weight_name = context.state["profile"]["weight_name"];
     if( weight_name != sol::nullopt)
@@ -443,6 +437,11 @@ void Sol2ScriptingEnvironment::InitContext(LuaScriptingContext &context)
     sol::optional<bool> force_split_edges = context.state["profile"]["force_split_edges"];
     if( force_split_edges != sol::nullopt)
       context.properties.force_split_edges = force_split_edges.value();
+
+    if(auto profile = context.state["profile"])
+    { // set computed profile properties
+        profile["max_turn_weight"] = context.properties.GetMaxTurnWeight();
+    }
 
     sol::function turn_function = context.state["turn_function"];
     sol::function node_function = context.state["node_function"];

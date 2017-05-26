@@ -318,7 +318,7 @@ function way_function(way, result)
   }
 
   -- perform an quick initial check and abort if the way is
-  -- obviously not routable. 
+  -- obviously not routable.
   -- highway or route tags must be in data table, bridge is optional
   if (not data.highway or data.highway == '') and
   (not data.route or data.route == '')
@@ -412,7 +412,7 @@ function turn_function (turn)
   if profile.weight_name == 'routability' then
       -- penalize turns from non-local access only segments onto local access only tags
       if not turn.source_restricted and turn.target_restricted then
-          turn.weight = constants.max_turn_weight
+          turn.weight = profile.max_turn_weight
       end
   end
 end
