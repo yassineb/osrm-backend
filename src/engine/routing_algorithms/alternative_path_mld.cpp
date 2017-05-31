@@ -158,7 +158,8 @@ inline double normalizedPackedPathSharing(const Partition &partition,
     // Is sharing based on cells only already good enough? Needs experimentation.
 
     std::size_t num_different = 0;
-    auto out = boost::make_function_output_iterator([&](auto) { num_different += 1; });
+    auto out = boost::make_function_output_iterator(
+        std::function<void(CellID)>([&](auto) { num_different += 1; }));
     std::set_difference(begin(lhs_cells), end(lhs_cells), begin(rhs_cells), end(rhs_cells), out);
 
     const auto difference = static_cast<double>(num_different) / lhs.size();
