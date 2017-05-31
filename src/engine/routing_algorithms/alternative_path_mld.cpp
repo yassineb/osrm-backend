@@ -136,6 +136,7 @@ inline double normalizedPackedPathSharing(const Partition &partition,
 
     const auto get_cell = [&](auto node) { return partition.GetCell(level, node); };
 
+    // Todo: might benefit from stack alloc, we're creating two small vecs everytime here
     std::vector<CellID> lhs_cells(lhs.size() + 1);
     std::vector<CellID> rhs_cells(rhs.size() + 1);
 
