@@ -29,13 +29,17 @@ namespace routing_algorithms
 // This alternative implementation works only for mld.
 using namespace mld;
 
-using Facade = datafacade::ContiguousInternalMemoryDataFacade<Algorithm>;
+using Heap = SearchEngineData<Algorithm>::QueryHeap;
 using Partition = partition::MultiLevelPartitionView;
+using Facade = datafacade::ContiguousInternalMemoryDataFacade<Algorithm>;
 
 // Implementation details
 namespace
 {
 
+// Alternative paths candidate via nodes are taken from overlapping search spaces.
+// Overlapping by a third guarantees us taking candidate nodes "from the middle".
+const constexpr auto kSearchSpaceOverlapFactor = 1.66;
 // Maximum number of alternative paths to return.
 const constexpr auto kMaxAlternatives = 3;
 // Alternative paths length requirement (stretch).
@@ -44,6 +48,10 @@ const constexpr auto kEpsilon = 0.15;
 // Alternative paths similarity requirement (sharing).
 // At least 25% different than the shortest path.
 const constexpr auto kGamma = 0.75;
+// Alternative paths are still reasonable around the via node candidate (local optimality).
+// At least optimal around 10% sub-paths around the via node candidate.
+const /*constexpr*/ auto kAlpha = 0.10;
+//    ^ ICEs gcc 7.1, just leave it our for better times.
 
 // Represents a via middle node where forward (from s) and backward (from t)
 // search spaces overlap and the weight a path (made up of s,via and via,t) has.
@@ -79,6 +87,7 @@ template <typename RandIt>
 RandIt filterViaCandidatesByRoadImportance(RandIt first, RandIt last, const Facade &facade)
 {
     util::static_assert_iter_category<RandIt, std::random_access_iterator_tag>();
+    util::static_assert_iter_value<RandIt, WeightedViaNode>();
 
     // Todo: the idea here is to filter out alternatives where the via candidate is not on a
     // high-priority road. We should experiment if this is really needed or if the boundary
@@ -100,6 +109,7 @@ template <typename RandIt>
 RandIt filterViaCandidatesByStretch(RandIt first, RandIt last, EdgeWeight weight)
 {
     util::static_assert_iter_category<RandIt, std::random_access_iterator_tag>();
+    util::static_assert_iter_value<RandIt, WeightedViaNode>();
 
     // Todo: scale epsilon with weight. Higher epsilon for short routes are reasonable.
     //
@@ -173,25 +183,78 @@ inline double normalizedPackedPathSharing(const Partition &partition,
 // Filters packed paths with similar cells compared to the primary route. Mutates range in-place.
 // Returns an iterator to the filtered range's new end.
 template <typename RandIt>
-RandIt filterPackedPathsByCellSharing(const PackedPath &path,
+RandIt filterPackedPathsByCellSharing(const WeightedViaNodePackedPath &path,
                                       const Partition &partition,
                                       RandIt first,
                                       RandIt last)
 {
     util::static_assert_iter_category<RandIt, std::random_access_iterator_tag>();
+    util::static_assert_iter_value<RandIt, WeightedViaNodePackedPath>();
 
     const auto over_sharing_limit = [&](const auto &packed) {
-        return normalizedPackedPathSharing(partition, path, packed.path) > kGamma;
+        return normalizedPackedPathSharing(partition, path.path, packed.path) > kGamma;
     };
 
     return std::remove_if(first, last, over_sharing_limit);
+}
+
+// Filters packed paths based on local optimality. Mutates range in-place.
+// Returns an iterator to the filtered range's new end.
+template <typename RandIt>
+RandIt filterPackedPathsByLocalOptimality(const WeightedViaNodePackedPath &path,
+                                          const Heap &forward_heap,
+                                          const Heap &reverse_heap,
+                                          RandIt first,
+                                          RandIt last)
+{
+    util::static_assert_iter_category<RandIt, std::random_access_iterator_tag>();
+    util::static_assert_iter_value<RandIt, WeightedViaNodePackedPath>();
+
+    // Check sub-path optimality on alternative path crossing the via node candidate.
+    //
+    //   s - - - v - - - t  our packed path made up of (from, to) edges
+    //        |--|--|       sub-paths "left" and "right" of v based on threshold
+    //        f  v  l       nodes in [v,f] and in [v, l] have to match predecessor in heaps
+
+    // Todo: this approach is efficient but works on packed paths only. Do we need to do a
+    // thorough check on the unpacked paths instead? Or do we even need to introduce two
+    // new thread-local heaps for the mld SearchEngineData and do proper s-t routing here?
+
+    BOOST_ASSERT(path.via.weight != INVALID_EDGE_WEIGHT);
+
+    const EdgeWeight threshold = kAlpha * path.via.weight;
+
+    const auto is_not_locally_optimal = [&](const auto &packed) {
+        BOOST_ASSERT(packed.via.weight != INVALID_EDGE_WEIGHT);
+        BOOST_ASSERT(packed.via.node != SPECIAL_NODEID);
+        BOOST_ASSERT(!packed.path.empty());
+
+        const NodeID via = packed.via.node;
+        const PackedPath &path = packed.path;
+
+        const EdgeWeight via_weight_in_forward_search = forward_heap.GetKey(via);
+        const EdgeWeight via_weight_in_reverse_search = reverse_heap.GetKey(via);
+
+        BOOST_ASSERT(via_weight_in_forward_search != INVALID_EDGE_WEIGHT);
+        BOOST_ASSERT(via_weight_in_reverse_search != INVALID_EDGE_WEIGHT);
+
+        const EdgeWeight forward_boundary_weight =
+            std::min(EdgeWeight{0}, via_weight_in_forward_search - threshold);
+
+        const EdgeWeight reverse_boundary_weight =
+            std::min(EdgeWeight{0}, via_weight_in_reverse_search - threshold);
+
+        return false; // Todo: implement
+    };
+
+    return std::remove_if(first, last, is_not_locally_optimal);
 }
 
 } // anon. ns
 
 // Alternative Routes for MLD.
 //
-// Start search from s and continue "for a while" when t was found. Save all vertices.
+// Start search from s and continue "for a while" when midd was found. Save all vertices.
 // Start search from t and continue "for a while" when s was found. Save all vertices.
 // Intersect both vertex sets: these are the candidate vertices.
 // For all candidate vertices c a (potentially arbitrarily bad) alternative route is (s, c, t).
@@ -208,12 +271,12 @@ alternativePathSearch(SearchEngineData<Algorithm> &search_engine_data,
                       const datafacade::ContiguousInternalMemoryDataFacade<Algorithm> &facade,
                       const PhantomNodes &phantom_node_pair)
 {
-    const auto &partition = facade.GetMultiLevelPartition();
+    const Partition &partition = facade.GetMultiLevelPartition();
 
     search_engine_data.InitializeOrClearFirstThreadLocalStorage(facade.GetNumberOfNodes());
 
-    auto &forward_heap = *search_engine_data.forward_heap_1;
-    auto &reverse_heap = *search_engine_data.reverse_heap_1;
+    Heap &forward_heap = *search_engine_data.forward_heap_1;
+    Heap &reverse_heap = *search_engine_data.reverse_heap_1;
 
     insertNodesInHeaps(forward_heap, reverse_heap, phantom_node_pair);
 
@@ -229,8 +292,6 @@ alternativePathSearch(SearchEngineData<Algorithm> &search_engine_data,
     NodeID overlap_via = SPECIAL_NODEID;
     EdgeWeight overlap_weight = INVALID_EDGE_WEIGHT;
 
-    const auto overlap_factor = 1.66;
-
     // All via nodes in the overlapping search space (except the shortest path via node).
     // Will be filtered and ranked and then used for s,via and via,t alternative paths.
     std::vector<WeightedViaNode> candidate_vias;
@@ -241,8 +302,8 @@ alternativePathSearch(SearchEngineData<Algorithm> &search_engine_data,
     // we're over factor * weight. We have to set the weight for routingStep to INVALID_EDGE_WEIGHT
     // so that stepping will continue even after we reached the shortest path upper bound.
 
-    const auto force_loop_forward = needsLoopForward(phantom_node_pair);
-    const auto force_loop_backward = needsLoopBackwards(phantom_node_pair);
+    const bool force_loop_forward = needsLoopForward(phantom_node_pair);
+    const bool force_loop_backward = needsLoopBackwards(phantom_node_pair);
 
     EdgeWeight forward_heap_min = forward_heap.MinKey();
     EdgeWeight reverse_heap_min = reverse_heap.MinKey();
@@ -250,10 +311,10 @@ alternativePathSearch(SearchEngineData<Algorithm> &search_engine_data,
     while (forward_heap.Size() + reverse_heap.Size() > 0)
     {
         if (shortest_path_weight != INVALID_EDGE_WEIGHT)
-            overlap_weight = shortest_path_weight * overlap_factor;
+            overlap_weight = shortest_path_weight * kSearchSpaceOverlapFactor;
 
         // Termination criteria - when we have a shortest path this will guarantee for our overlap.
-        const auto keep_going = forward_heap_min + reverse_heap_min < overlap_weight;
+        const bool keep_going = forward_heap_min + reverse_heap_min < overlap_weight;
 
         if (!keep_going)
             break;
@@ -324,9 +385,9 @@ alternativePathSearch(SearchEngineData<Algorithm> &search_engine_data,
         shortest_path_weight = std::min(shortest_path_weight, overlap_weight);
     }
 
-    const auto has_valid_shortest_path_weight = shortest_path_weight != INVALID_EDGE_WEIGHT;
-    const auto has_valid_shortest_path_via = shortest_path_via != SPECIAL_NODEID;
-    const auto has_shortest_path = has_valid_shortest_path_weight && has_valid_shortest_path_via;
+    const bool has_valid_shortest_path_weight = shortest_path_weight != INVALID_EDGE_WEIGHT;
+    const bool has_valid_shortest_path_via = shortest_path_via != SPECIAL_NODEID;
+    const bool has_shortest_path = has_valid_shortest_path_weight && has_valid_shortest_path_via;
 
     if (!has_shortest_path)
         return InternalManyRoutesResult{};
@@ -378,9 +439,16 @@ alternativePathSearch(SearchEngineData<Algorithm> &search_engine_data,
 
     // Filter packed paths with heuristics
 
-    const auto alternative_paths_first = begin(weighted_packed_paths) + 1;
     auto alternative_paths_last = end(weighted_packed_paths);
-    const auto number_of_alternative_paths = alternative_paths_last - alternative_paths_first;
+
+    alternative_paths_last = filterPackedPathsByLocalOptimality(weighted_packed_paths[0],
+                                                                forward_heap, // paths for s, via
+                                                                reverse_heap, // paths for via, t
+                                                                begin(weighted_packed_paths) + 1,
+                                                                alternative_paths_last);
+
+    const auto number_of_alternative_paths =
+        alternative_paths_last - (begin(weighted_packed_paths) + 1);
 
     // Todo: refactor - this is ugly af
 
@@ -393,16 +461,16 @@ alternativePathSearch(SearchEngineData<Algorithm> &search_engine_data,
         for (std::size_t j = 0; j < i; ++j)
         {
             alternative_paths_last =
-                filterPackedPathsByCellSharing(weighted_packed_paths[j].path,
+                filterPackedPathsByCellSharing(weighted_packed_paths[j],
                                                partition,
                                                begin(weighted_packed_paths) + i,
                                                alternative_paths_last);
         }
     }
 
-    number_of_requested_alternative_paths =
-        std::min(static_cast<std::size_t>(kMaxAlternatives),
-                 static_cast<std::size_t>(alternative_paths_last - alternative_paths_first));
+    number_of_requested_alternative_paths = std::min(
+        static_cast<std::size_t>(kMaxAlternatives),
+        static_cast<std::size_t>(alternative_paths_last - (begin(weighted_packed_paths) + 1)));
 
     // ^ refactor
 
