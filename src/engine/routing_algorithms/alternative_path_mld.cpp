@@ -43,15 +43,15 @@ const constexpr auto kSearchSpaceOverlapFactor = 1.66;
 // Maximum number of alternative paths to return.
 const constexpr auto kMaxAlternatives = 3;
 // Alternative paths length requirement (stretch).
-// At most 15% longer then the shortest path.
-const constexpr auto kEpsilon = 0.15;
+// At most 25% longer then the shortest path.
+const constexpr auto kEpsilon = 0.25;
 // Alternative paths similarity requirement (sharing).
-// At least 25% different than the shortest path.
-const constexpr auto kGamma = 0.75;
+// At least 15% different than the shortest path.
+const constexpr auto kGamma = 0.85;
 // Alternative paths are still reasonable around the via node candidate (local optimality).
 // At least optimal around 10% sub-paths around the via node candidate.
 const /*constexpr*/ auto kAlpha = 0.10;
-//    ^ ICEs gcc 7.1, just leave it our for better times.
+// Note: ^ ICEs gcc 7.1, just leave it out for better times
 
 // Represents a via middle node where forward (from s) and backward (from t)
 // search spaces overlap and the weight a path (made up of s,via and via,t) has.
@@ -230,6 +230,12 @@ RandIt filterPackedPathsByLocalOptimality(const WeightedViaNodePackedPath &path,
         BOOST_ASSERT(!packed.path.empty());
 
         const NodeID via = packed.via.node;
+
+        // Todo: check the plateaux property not only for one-hop parents but for all in
+        // the ranges [f, via] and [via, l] which we determined based on the threshold.
+        // See below for plateaux property explanation and the one-hop implementation.
+
+        /*
         const PackedPath &path = packed.path;
 
         const EdgeWeight via_weight_in_forward_search = forward_heap.GetKey(via);
@@ -238,13 +244,107 @@ RandIt filterPackedPathsByLocalOptimality(const WeightedViaNodePackedPath &path,
         BOOST_ASSERT(via_weight_in_forward_search != INVALID_EDGE_WEIGHT);
         BOOST_ASSERT(via_weight_in_reverse_search != INVALID_EDGE_WEIGHT);
 
-        const EdgeWeight forward_boundary_weight =
-            std::min(EdgeWeight{0}, via_weight_in_forward_search - threshold);
+        // Todo: Triggers. Why? I think we don't have the stepping fully correct yet.
+        //
+        // BOOST_ASSERT(via_weight_in_forward_search + via_weight_in_reverse_search ==
+        //              packed.via.weight);
 
-        const EdgeWeight reverse_boundary_weight =
-            std::min(EdgeWeight{0}, via_weight_in_reverse_search - threshold);
+        // Gather sub-paths around node v with weights smaller than weight(v)
+        // in both the forward and the reverse search. Then check predecessors.
 
-        return false; // Todo: implement
+        const EdgeWeight forward_min_weight =
+            std::max(EdgeWeight{0}, via_weight_in_forward_search - threshold);
+        const EdgeWeight reverse_min_weight =
+            std::max(EdgeWeight{0}, via_weight_in_reverse_search - threshold);
+
+        // Todo: can we do this without the transformation and the new vector here?
+        // If not we should benchmark and think about a stack allocator.
+        std::vector<NodeID> path_nodes(path.size() + 1);
+
+        path_nodes[0] = std::get<0>(path.front());
+
+        for (std::size_t i = 0; i < path.size(); ++i)
+            path_nodes[i + 1] = std::get<1>(path[i]);
+
+        const auto via_it = std::find(begin(path_nodes), end(path_nodes), via);
+        BOOST_ASSERT(via_it != end(path_nodes));
+
+        const std::size_t via_at = via_it - begin(path_nodes);
+        BOOST_ASSERT(via_at >= 0 && via_at < path_nodes.size());
+
+        // From via go towards s and find the node where we are over the threshold.
+        // Then, from via go towards t and fine the node where we are over the threshold.
+
+        // Todo: refactor into using iterators and reverse_iterators
+        // Todo: refactor into using lower_bound; nodes on path are sorted wrt. their weight
+
+        std::size_t forward_min_index = via_at;
+        std::size_t reverse_min_index = via_at;
+
+        for (std::size_t i = via_at; i > 0; --i)
+        {
+            const auto node = path_nodes[i];
+            const auto weight = forward_heap.GetKey(node);
+
+            if (weight < forward_min_weight)
+            {
+                forward_min_index = i;
+                break;
+            }
+        }
+
+        for (std::size_t i = via_at; i < path_nodes.size(); ++i)
+        {
+            const auto node = path_nodes[i];
+            const auto weight = reverse_heap.GetKey(node);
+
+            if (weight < reverse_min_weight)
+            {
+                reverse_min_index = i;
+                break;
+            }
+        }
+
+        // We now have the ranges [f, via] and [via, l] which we have to test for optimality.
+        // We can do this by checking the node predecessors in the heaps, these are optimal.
+
+        const auto forward_subpath_first = begin(path_nodes) + forward_min_index;
+        const auto forward_subpath_last = begin(path_nodes) + via_at;
+
+        const auto reverse_subpath_first = begin(path_nodes) + via_at;
+        const auto reverse_subpath_last = begin(path_nodes) + reverse_min_index;
+        */
+
+        // Plateaux iff via == parent_in_reverse_search(parent_in_forward_search(via))
+        //
+        // Forward search starts from s, reverse search starts from t:
+        //  - parent_in_forward_search(via) = a
+        //  - parent_in_reverse_search(a) = b  != via and therefore not local optimal
+        //
+        //        via
+        //      .'   '.
+        // s - a - - - b - t
+        //
+        // Care needs to be taken for the edge case where the via node is on the border
+        // of the search spaces and therefore parent pointers may not be valid in heaps.
+        // In these cases we know we can't have local optimality around the via already.
+
+        const auto parent_in_forward = forward_heap.GetData(via).parent;
+        const auto parent_in_reverse = reverse_heap.GetData(via).parent;
+
+        // Edge case where via is at the border of the search spaces;
+        // we may not have seen the node's parent in the dual heap.
+        if (!forward_heap.WasInserted(parent_in_reverse))
+            return true;
+        if (!reverse_heap.WasInserted(parent_in_forward))
+            return true;
+
+        const auto parent_parent_in_forward = forward_heap.GetData(parent_in_reverse).parent;
+        const auto parent_parent_in_reverse = reverse_heap.GetData(parent_in_forward).parent;
+
+        const auto plateaux = parent_parent_in_forward == via && parent_parent_in_reverse == via;
+
+        return !plateaux;
     };
 
     return std::remove_if(first, last, is_not_locally_optimal);
