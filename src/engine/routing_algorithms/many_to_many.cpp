@@ -247,13 +247,66 @@ manyToManySearch(SearchEngineData<Algorithm> &engine_working_data,
 namespace mld
 {
 template <typename QueryHeap>
-void forwardRoutingStep(const datafacade::ContiguousInternalMemoryDataFacade<Algorithm> &facade,
-                        QueryHeap &query_heap)
+void forwardRoutingStep(
+    const datafacade::ContiguousInternalMemoryDataFacade<mld::Algorithm> &facade,
+    const partition::MultiLevelPartitionView &partition,
+    const partition::CellStorageView &cell_storage,
+    const PhantomNode &source,
+    QueryHeap &heap)
 {
-    const NodeID node = query_heap.DeleteMin();
-    const EdgeWeight source_weight = query_heap.GetKey(node);
+    const NodeID node = heap.DeleteMin();
+    const EdgeWeight source_weight = heap.GetKey(node);
 
-    /* TODO uni-directional MLD search */
+    const LevelID forward_level = source.forward_segment_id.enabled ? partition.GetHighestDifferentLevel(source.forward_segment_id.id, node) : INVALID_LEVEL_ID;
+    const LevelID backward_level = source.reverse_segment_id.enabled ? partition.GetHighestDifferentLevel(source.reverse_segment_id.id, node) : INVALID_LEVEL_ID;
+    const LevelID level = std::min(forward_level, backward_level);
+
+    for (auto edge : facade.GetBorderEdgeRange(level, node))
+    {
+        const auto target = facade.GetTarget(edge);
+        const auto edge_weight = facade.GetEdgeData(edge).weight;
+        const auto new_weight = edge_weight + source_weight;
+        if (heap.WasInserted(target))
+        {
+            if (heap.GetKey(target) > new_weight)
+            {
+                heap.DecreaseKey(target, new_weight);
+                auto &data = heap.GetData(target);
+                data.parent = node;
+                data.from_clique_arc = false;
+            }
+        }
+        else
+        {
+            heap.Insert(target, new_weight, {node, false});
+        }
+    }
+
+    if (level > 0 && !heap.GetData(node).from_clique_arc)
+    {
+        // Shortcuts in forward direction
+        const auto &cell = cell_storage.GetCell(level, partition.GetCell(level, node));
+        auto destination = cell.GetDestinationNodes().begin();
+        for (auto shortcut_weight : cell.GetOutWeight(node))
+        {
+            BOOST_ASSERT(destination != cell.GetDestinationNodes().end());
+            const NodeID to = *destination;
+            if (shortcut_weight != INVALID_EDGE_WEIGHT && node != to)
+            {
+                const EdgeWeight to_weight = source_weight + shortcut_weight;
+                if (!heap.WasInserted(to))
+                {
+                    heap.Insert(to, to_weight, {node, true});
+                }
+                else if (to_weight < heap.GetKey(to))
+                {
+                    heap.GetData(to) = {node, true};
+                    heap.DecreaseKey(to, to_weight);
+                }
+            }
+            ++destination;
+        }
+    }
 }
 
 template <typename QueryHeap>
@@ -261,7 +314,7 @@ void extractRow(const std::size_t offset,
                 QueryHeap &query_heap,
                 const std::vector<std::size_t> &target_indices,
                 const std::vector<PhantomNode> &phantom_nodes,
-                std::vector<EdgeWeight> &durations_table,
+                std::vector<EdgeWeight> &/*durations_table*/,
                 std::vector<EdgeWeight> &weights_table)
 {
     std::size_t column_idx = 0;
@@ -344,6 +397,9 @@ manyToManySearch(SearchEngineData<mld::Algorithm> &engine_working_data,
             select_node(phantom.reverse_segment_id.id);
     };
 
+    const auto& partition = facade.GetMultiLevelPartition();
+    const auto& cell_storage = facade.GetCellStorage();
+
     // for each source do forward search
     unsigned row_idx = 0;
     const auto search_source_phantom = [&](const PhantomNode &phantom) {
@@ -354,11 +410,12 @@ manyToManySearch(SearchEngineData<mld::Algorithm> &engine_working_data,
         // explore search space
         while (!query_heap.Empty())
         {
-            forwardRoutingStep(facade, query_heap);
+            forwardRoutingStep(facade, partition, cell_storage, phantom, query_heap);
         }
 
         const auto offset = row_idx * number_of_targets;
-        extractRow(offset, query_heap, target_indices, phantom_nodes, durations_table, weights_table);
+        extractRow(
+            offset, query_heap, target_indices, phantom_nodes, durations_table, weights_table);
         ++row_idx;
     };
 

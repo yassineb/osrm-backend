@@ -47,6 +47,12 @@ void insertSourceInHeap(SearchEngineData<ch::Algorithm>::ManyToManyQueryHeap &he
 void insertTargetInHeap(SearchEngineData<ch::Algorithm>::ManyToManyQueryHeap &heap,
                         const PhantomNode &phantom_node);
 
+void insertSourceInHeap(SearchEngineData<mld::Algorithm>::QueryHeap &heap,
+                        const PhantomNode &phantom_node);
+
+void insertTargetInHeap(SearchEngineData<mld::Algorithm>::QueryHeap &heap,
+                        const PhantomNode &phantom_node);
+
 template <typename Heap>
 void insertNodesInHeaps(Heap &forward_heap, Heap &reverse_heap, const PhantomNodes &nodes)
 {

@@ -57,6 +57,40 @@ void insertTargetInHeap(SearchEngineData<ch::Algorithm>::ManyToManyQueryHeap &he
     }
 }
 
+void insertSourceInHeap(SearchEngineData<mld::Algorithm>::QueryHeap &heap,
+                        const PhantomNode &phantom_node)
+{
+    if (phantom_node.IsValidForwardSource())
+    {
+        heap.Insert(phantom_node.forward_segment_id.id,
+                    -phantom_node.GetForwardWeightPlusOffset(),
+                    {phantom_node.forward_segment_id.id, false});
+    }
+    if (phantom_node.IsValidReverseSource())
+    {
+        heap.Insert(phantom_node.reverse_segment_id.id,
+                    -phantom_node.GetReverseWeightPlusOffset(),
+                    {phantom_node.reverse_segment_id.id, false});
+    }
+}
+
+void insertTargetInHeap(SearchEngineData<mld::Algorithm>::QueryHeap &heap,
+                        const PhantomNode &phantom_node)
+{
+    if (phantom_node.IsValidForwardTarget())
+    {
+        heap.Insert(phantom_node.forward_segment_id.id,
+                    phantom_node.GetForwardWeightPlusOffset(),
+                    {phantom_node.forward_segment_id.id, false});
+    }
+    if (phantom_node.IsValidReverseTarget())
+    {
+        heap.Insert(phantom_node.reverse_segment_id.id,
+                    phantom_node.GetReverseWeightPlusOffset(),
+                    {phantom_node.reverse_segment_id.id, false});
+    }
+}
+
 } // namespace routing_algorithms
 } // namespace engine
 } // namespace osrm
