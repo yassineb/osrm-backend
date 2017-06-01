@@ -244,32 +244,60 @@ manyToManySearch(SearchEngineData<Algorithm> &engine_working_data,
 
 } // namespace ch
 
-
 namespace mld
 {
-template<typename QueryHeap>
+template <typename QueryHeap>
 void forwardRoutingStep(const datafacade::ContiguousInternalMemoryDataFacade<Algorithm> &facade,
-                        const unsigned row_idx,
-                        const unsigned number_of_targets,
-                        QueryHeap &query_heap,
-                        std::vector<EdgeWeight> &weights_table,
-                        std::vector<EdgeWeight> &durations_table)
+                        QueryHeap &query_heap)
 {
     const NodeID node = query_heap.DeleteMin();
     const EdgeWeight source_weight = query_heap.GetKey(node);
 
     /* TODO uni-directional MLD search */
 }
-}
 
-std::vector<EdgeWeight>
-manyToManySearch(SearchEngineData<ch::Algorithm> &engine_working_data,
-                 const datafacade::ContiguousInternalMemoryDataFacade<ch::Algorithm> &facade,
-                 const std::vector<PhantomNode> &phantom_nodes,
-                 const std::vector<std::size_t> &source_indices,
-                 const std::vector<std::size_t> &target_indices)
+template <typename QueryHeap>
+void extractRow(const std::size_t offset,
+                QueryHeap &query_heap,
+                const std::vector<std::size_t> &target_indices,
+                const std::vector<PhantomNode> &phantom_nodes,
+                std::vector<EdgeWeight> &durations_table,
+                std::vector<EdgeWeight> &weights_table)
 {
-    ch::manyToManySearch(engine_working_data, facade, phantom_nodes, source_indices, target_indices);
+    std::size_t column_idx = 0;
+    const auto extract_phantom = [&](const auto &phantom) {
+        auto &weight_entry = weights_table[offset + column_idx];
+        // TODO add duration entry
+        if (phantom.forward_segment_id.enabled && phantom.reverse_segment_id.enabled)
+        {
+            weight_entry = std::min(query_heap.GetKey(phantom.forward_segment_id.id),
+                                    query_heap.GetKey(phantom.reverse_segment_id.id));
+        }
+        else if (phantom.forward_segment_id.enabled)
+        {
+            weight_entry = query_heap.GetKey(phantom.forward_segment_id.id);
+        }
+        else if (phantom.reverse_segment_id.enabled)
+        {
+            weight_entry = query_heap.GetKey(phantom.reverse_segment_id.id);
+        }
+    };
+
+    if (target_indices.empty())
+    {
+        for (const auto &phantom : phantom_nodes)
+        {
+            extract_phantom(phantom);
+        }
+    }
+    else
+    {
+        for (const auto index : target_indices)
+        {
+            const auto &phantom = phantom_nodes[index];
+            extract_phantom(phantom);
+        }
+    }
 }
 
 std::vector<EdgeWeight>
@@ -321,18 +349,16 @@ manyToManySearch(SearchEngineData<mld::Algorithm> &engine_working_data,
     const auto search_source_phantom = [&](const PhantomNode &phantom) {
         // clear heap and insert source nodes
         query_heap.Clear();
-        insertNodesInHeap<FORWARD_DIRECTION>(query_heap, phantom);
+        insertSourceInHeap(query_heap, phantom);
 
         // explore search space
         while (!query_heap.Empty())
         {
-            mld::forwardRoutingStep(facade,
-                               row_idx,
-                               number_of_targets,
-                               query_heap,
-                               weights_table,
-                               durations_table);
+            forwardRoutingStep(facade, query_heap);
         }
+
+        const auto offset = row_idx * number_of_targets;
+        extractRow(offset, query_heap, target_indices, phantom_nodes, durations_table, weights_table);
         ++row_idx;
     };
 
@@ -376,10 +402,32 @@ manyToManySearch(SearchEngineData<mld::Algorithm> &engine_working_data,
         }
     }
 
-    return durations_table;
+    // return durations_table;
+    return weights_table;
+}
 }
 
+std::vector<EdgeWeight>
+manyToManySearch(SearchEngineData<ch::Algorithm> &engine_working_data,
+                 const datafacade::ContiguousInternalMemoryDataFacade<ch::Algorithm> &facade,
+                 const std::vector<PhantomNode> &phantom_nodes,
+                 const std::vector<std::size_t> &source_indices,
+                 const std::vector<std::size_t> &target_indices)
+{
+    ch::manyToManySearch(
+        engine_working_data, facade, phantom_nodes, source_indices, target_indices);
+}
 
+std::vector<EdgeWeight>
+manyToManySearch(SearchEngineData<mld::Algorithm> &engine_working_data,
+                 const datafacade::ContiguousInternalMemoryDataFacade<mld::Algorithm> &facade,
+                 const std::vector<PhantomNode> &phantom_nodes,
+                 const std::vector<std::size_t> &source_indices,
+                 const std::vector<std::size_t> &target_indices)
+{
+    mld::manyToManySearch(
+        engine_working_data, facade, phantom_nodes, source_indices, target_indices);
+}
 
 } // namespace routing_algorithms
 } // namespace engine
