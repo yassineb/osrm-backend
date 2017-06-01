@@ -100,10 +100,19 @@ void routingStep(const datafacade::ContiguousInternalMemoryDataFacade<Algorithm>
     if (reverse_heap.WasInserted(node) &&
         forward_heap.GetData(node).parent != reverse_heap.GetData(node).parent)
     {
-        const EdgeWeight new_weight = reverse_heap.GetKey(node) + weight;
+        EdgeWeight new_weight = reverse_heap.GetKey(node) + weight;
+
+        if (DIRECTION == REVERSE_DIRECTION && reverse_heap.GetData(node).parent == node)
+        { // If the rendez-vous node is a phantom source one with the projected weight value `sb`
+            // for the path `a---s===b===t---c` with `weight=weight(ab)+turn(abc)+weight(bt)`
+            // then the new_weight must be corrected by the weight value of the node `ab`
+            const auto node_weight = getNodeWeight(facade, node);
+            BOOST_ASSERT(new_weight >= node_weight);
+            new_weight -= node_weight;
+        }
+
         if (new_weight < upper_bound)
         {
-            BOOST_ASSERT(new_weight >= 0);
             middle_node_id = node;
             upper_bound = new_weight;
         }
