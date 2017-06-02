@@ -42,6 +42,11 @@ namespace
 const constexpr auto kSearchSpaceOverlapFactor = 1.66;
 // Maximum number of alternative paths to return.
 const constexpr auto kMaxAlternatives = 3;
+// Maximum number of alternative paths to unpack and run high-quality checks on.
+// Unpack up to five times more pre-filtered paths than the user wants.
+// Note: this knob tunes how many unpacked paths go through high-quality filtering.
+// Set lower for higher performance but alternatives of lower quality.
+const constexpr auto kMaxAlternativesToUnpack = kMaxAlternatives * 5;
 // Alternative paths length requirement (stretch).
 // At most 25% longer then the shortest path.
 const constexpr auto kEpsilon = 0.25;
@@ -235,6 +240,7 @@ RandIt filterPackedPathsByLocalOptimality(const WeightedViaNodePackedPath &path,
     BOOST_ASSERT(path.via.weight != INVALID_EDGE_WEIGHT);
 
     const EdgeWeight threshold = kAlpha * path.via.weight;
+    (void)threshold; // Todo: use; see below
 
     const auto is_not_locally_optimal = [&](const auto &packed) {
         BOOST_ASSERT(packed.via.weight != INVALID_EDGE_WEIGHT);
@@ -612,11 +618,11 @@ alternativePathSearch(SearchEngineData<Algorithm> &search_engine_data,
 
     // Todo: refactor - this is ugly af
 
-    auto number_of_requested_alternative_paths =
-        std::min(static_cast<std::size_t>(kMaxAlternatives),
+    auto number_of_filtered_alternative_paths =
+        std::min(static_cast<std::size_t>(kMaxAlternativesToUnpack),
                  static_cast<std::size_t>(number_of_alternative_paths));
 
-    for (std::size_t i = 1; i < number_of_requested_alternative_paths; ++i)
+    for (std::size_t i = 1; i < number_of_filtered_alternative_paths; ++i)
     {
         for (std::size_t j = 0; j < i; ++j)
         {
@@ -628,15 +634,14 @@ alternativePathSearch(SearchEngineData<Algorithm> &search_engine_data,
         }
     }
 
-    number_of_requested_alternative_paths = std::min(
-        static_cast<std::size_t>(kMaxAlternatives),
+    number_of_filtered_alternative_paths = std::min(
+        static_cast<std::size_t>(kMaxAlternativesToUnpack),
         static_cast<std::size_t>(alternative_paths_last - (begin(weighted_packed_paths) + 1)));
 
     // ^ refactor
 
     const auto paths_first = begin(weighted_packed_paths);
-    const auto paths_last =
-        begin(weighted_packed_paths) + 1 + number_of_requested_alternative_paths;
+    const auto paths_last = begin(weighted_packed_paths) + 1 + number_of_filtered_alternative_paths;
     const auto number_of_packed_paths = paths_last - paths_first;
 
     // Todo: pick x times more paths to unpack here than the user requested.
@@ -724,11 +729,6 @@ alternativePathSearch(SearchEngineData<Algorithm> &search_engine_data,
             }
         }
 
-        //
-        // Filter and rank a second time. This time instead of being fast and doing
-        // heuristics on the packed path only we now have the detailed unpacked path.
-        //
-
         WeightedViaNodeUnpackedPath unpacked_path{
             WeightedViaNode{packed_path_via, packed_path_weight},
             std::move(unpacked_nodes),
@@ -738,18 +738,43 @@ alternativePathSearch(SearchEngineData<Algorithm> &search_engine_data,
     }
 
     //
+    // Filter and rank a second time. This time instead of being fast and doing
+    // heuristics on the packed path only we now have the detailed unpacked path.
+    //
+
+    auto unpacked_paths_last = end(unpacked_paths);
+
+    for (std::size_t i = 1; i < unpacked_paths.size(); ++i)
+    {
+        for (std::size_t j = 0; j < i; ++j)
+        {
+            unpacked_paths_last = filterUnpackedPathsBySharing(
+                unpacked_paths[i], begin(unpacked_paths) + i, unpacked_paths_last);
+        }
+    }
+
+    // Todo: rank a last time by weight and sharing here, then just take first n
+
+    const auto unpacked_paths_first = begin(unpacked_paths);
+    const auto number_of_unpacked_paths =
+        std::min(static_cast<std::size_t>(kMaxAlternatives) + 1,
+                 static_cast<std::size_t>(unpacked_paths_last - unpacked_paths_first));
+
+    unpacked_paths_last = unpacked_paths_first + number_of_unpacked_paths;
+
+    //
     // Annotate the unpacked path and transform to proper internal route result.
     //
 
     std::vector<InternalRouteResult> routes;
-    routes.reserve(unpacked_paths.size());
+    routes.reserve(number_of_unpacked_paths);
 
     const auto unpacked_path_to_route = [&](const WeightedViaNodeUnpackedPath &path) {
         return extractRoute(facade, path.via.weight, phantom_node_pair, path.nodes, path.edges);
     };
 
-    std::transform(begin(unpacked_paths),
-                   end(unpacked_paths),
+    std::transform(unpacked_paths_first,
+                   unpacked_paths_last,
                    std::back_inserter(routes),
                    unpacked_path_to_route);
 
@@ -758,4 +783,4 @@ alternativePathSearch(SearchEngineData<Algorithm> &search_engine_data,
 
 } // namespace routing_algorithms
 } // namespace engine
-} // namespace osrm}
+} // namespace osrm
