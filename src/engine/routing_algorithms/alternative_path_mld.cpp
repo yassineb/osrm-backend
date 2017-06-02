@@ -69,6 +69,15 @@ struct WeightedViaNodePackedPath
     PackedPath path;
 };
 
+// Represents a high-detail unpacked path (s, .., via, .., t)
+// its total weight and the via node used to construct the path.
+struct WeightedViaNodeUnpackedPath
+{
+    WeightedViaNode via;
+    UnpackedNodes nodes;
+    UnpackedEdges edges;
+};
+
 // Filters candidates which are on not unique.
 // Returns an iterator to the uniquified range's new end.
 // Note: mutates the range in-place invalidating iterators.
@@ -128,7 +137,7 @@ RandIt filterViaCandidatesByStretch(RandIt first, RandIt last, EdgeWeight weight
     return std::remove_if(first, last, over_weight_limit);
 }
 
-// The packed paths' similarity in [0, 1] for dis-similarity and equality, respectively.
+// The packed paths' sharing in [0, 1] for no sharing and equality, respectively.
 inline double normalizedPackedPathSharing(const Partition &partition,
                                           const PackedPath &lhs,
                                           const PackedPath &rhs)
@@ -168,8 +177,11 @@ inline double normalizedPackedPathSharing(const Partition &partition,
     // Is sharing based on cells only already good enough? Needs experimentation.
 
     std::size_t num_different = 0;
+
+    // Needs to be wrapped in std::function for Windows compiler bug
     auto out = boost::make_function_output_iterator(
         std::function<void(CellID)>([&](auto) { num_different += 1; }));
+
     std::set_difference(begin(lhs_cells), end(lhs_cells), begin(rhs_cells), end(rhs_cells), out);
 
     const auto difference = static_cast<double>(num_different) / lhs.size();
@@ -228,6 +240,7 @@ RandIt filterPackedPathsByLocalOptimality(const WeightedViaNodePackedPath &path,
         BOOST_ASSERT(packed.via.weight != INVALID_EDGE_WEIGHT);
         BOOST_ASSERT(packed.via.node != SPECIAL_NODEID);
         BOOST_ASSERT(!packed.path.empty());
+        // Todo: we hit path.empty() when e.g. extracting bavaria but querying in berlin
 
         const NodeID via = packed.via.node;
 
@@ -348,6 +361,53 @@ RandIt filterPackedPathsByLocalOptimality(const WeightedViaNodePackedPath &path,
     };
 
     return std::remove_if(first, last, is_not_locally_optimal);
+}
+
+// The unpacked paths' sharing in [0, 1] for no sharing and equality, respectively.
+inline double normalizedUnpackedPathSharing(const UnpackedNodes &lhs, const UnpackedNodes &rhs)
+{
+    if (lhs.empty() || rhs.empty())
+        return 0.;
+
+    // Todo: stack alloc?
+    std::vector<NodeID> lhs_nodes{begin(lhs), end(lhs)};
+    std::vector<NodeID> rhs_nodes{begin(rhs), end(rhs)};
+
+    std::sort(begin(lhs_nodes), end(lhs_nodes));
+    std::sort(begin(rhs_nodes), end(rhs_nodes));
+
+    std::size_t num_different = 0;
+
+    // Needs to be wrapped in std::function for Windows compiler bug
+    auto out = boost::make_function_output_iterator(
+        std::function<void(NodeID)>([&](auto) { num_different += 1; }));
+
+    std::set_difference(begin(lhs_nodes), end(lhs_nodes), begin(rhs_nodes), end(rhs_nodes), out);
+
+    const auto difference = static_cast<double>(num_different) / lhs.size();
+
+    BOOST_ASSERT(difference >= 0.);
+    BOOST_ASSERT(difference <= 1.);
+
+    // Todo: do we need to scale sharing with edge weights in some sort?
+
+    return 1. - difference;
+}
+
+// Filters unpacked paths compared to the primary route. Mutates range in-place.
+// Returns an iterator to the filtered range's new end.
+template <typename RandIt>
+RandIt
+filterUnpackedPathsBySharing(const WeightedViaNodeUnpackedPath &path, RandIt first, RandIt last)
+{
+    util::static_assert_iter_category<RandIt, std::random_access_iterator_tag>();
+    util::static_assert_iter_value<RandIt, WeightedViaNodeUnpackedPath>();
+
+    const auto over_sharing_limit = [&](const auto &unpacked) {
+        return normalizedUnpackedPathSharing(path.nodes, unpacked.nodes) > kGamma;
+    };
+
+    return std::remove_if(first, last, over_sharing_limit);
 }
 
 } // anon. ns
@@ -579,9 +639,11 @@ alternativePathSearch(SearchEngineData<Algorithm> &search_engine_data,
         begin(weighted_packed_paths) + 1 + number_of_requested_alternative_paths;
     const auto number_of_packed_paths = paths_last - paths_first;
 
-    // We have at least one shortest path and potentially many alternative paths in the response.
-    std::vector<InternalRouteResult> routes;
-    routes.reserve(number_of_packed_paths);
+    // Todo: pick x times more paths to unpack here than the user requested.
+    // Todo: benchmark how many packed paths we can unnpack in our time budget.
+
+    std::vector<WeightedViaNodeUnpackedPath> unpacked_paths;
+    unpacked_paths.reserve(number_of_packed_paths);
 
     for (auto it = paths_first; it != paths_last; ++it)
     {
@@ -662,10 +724,34 @@ alternativePathSearch(SearchEngineData<Algorithm> &search_engine_data,
             }
         }
 
-        // Annotate the unpacked path and transform to proper internal route result.
-        routes.push_back(extractRoute(
-            facade, packed_path_weight, phantom_node_pair, unpacked_nodes, unpacked_edges));
+        //
+        // Filter and rank a second time. This time instead of being fast and doing
+        // heuristics on the packed path only we now have the detailed unpacked path.
+        //
+
+        WeightedViaNodeUnpackedPath unpacked_path{
+            WeightedViaNode{packed_path_via, packed_path_weight},
+            std::move(unpacked_nodes),
+            std::move(unpacked_edges)};
+
+        unpacked_paths.push_back(std::move(unpacked_path));
     }
+
+    //
+    // Annotate the unpacked path and transform to proper internal route result.
+    //
+
+    std::vector<InternalRouteResult> routes;
+    routes.reserve(unpacked_paths.size());
+
+    const auto unpacked_path_to_route = [&](const WeightedViaNodeUnpackedPath &path) {
+        return extractRoute(facade, path.via.weight, phantom_node_pair, path.nodes, path.edges);
+    };
+
+    std::transform(begin(unpacked_paths),
+                   end(unpacked_paths),
+                   std::back_inserter(routes),
+                   unpacked_path_to_route);
 
     return InternalManyRoutesResult{std::move(routes)};
 }
